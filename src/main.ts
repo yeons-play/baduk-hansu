@@ -16,15 +16,23 @@ import {
   recordResult,
   requestPersistence,
   saveGame,
+  loadSettings,
+  saveSettings,
+  loadLessons,
+  markLessonDone,
 } from './storage';
 import { icon } from './ui/icons';
+import { sfx, unlockAudio } from './audio';
+import { speak, stopSpeaking } from './speech';
+import { ALL_TITLES, LESSONS } from './lessons/data';
+import { LessonPlayer, rich } from './lessons/player';
 
 // ───────── 상태 ─────────
 // 아이폰·아이패드에서는 history API를 쓰지 않는다(홈 화면 앱 뒤로가기 꼬임 방지).
 // 화면 이동은 아래 탭과 '← 뒤로' 버튼만.
 
-type Screen = 'home' | 'game' | 'learn' | 'puzzle' | 'record';
-type Sheet = null | 'start' | 'rules' | 'resign' | 'result';
+type Screen = 'home' | 'game' | 'learn' | 'puzzle' | 'record' | 'lesson';
+type Sheet = null | 'start' | 'rules' | 'resign' | 'result' | 'settings' | 'lesson-done';
 
 const ui = {
   screen: 'home' as Screen,
@@ -37,6 +45,7 @@ const ui = {
   aiThinking: false,
   toast: null as string | null,
   result: { title: '', body: '', mood: 'happy' as Mood, win: false },
+  lesson: null as LessonPlayer | null,
 };
 
 const HUMAN = BLACK;
@@ -49,7 +58,7 @@ const app = document.getElementById('app')!;
 // 7살 기준 문구: 짧게, 쉬운 말 먼저, 바둑 용어는 괄호로
 const ILLEGAL_TEXT: Record<IllegalReason, string> = {
   occupied: '벌써 돌이 있어요!',
-  suicide: '거기는 숨구멍이 없어서 둘 수 없어요',
+  suicide: '거기는 숨구멍이 없어서 놓을 수 없어요 (자살수)',
   superko: '지금은 거기에 둘 수 없어요. 다른 곳에 먼저 놓아요 (패)',
   'off-board': '선이 만나는 곳을 눌러요',
   'game-over': '놀이가 끝났어요',
@@ -57,9 +66,9 @@ const ILLEGAL_TEXT: Record<IllegalReason, string> = {
 
 const HINT_TEXT: Record<MoveReason, string> = {
   win: '여기에 놓으면 백돌이를 잡아서 이겨요!',
-  capture: '여기에 놓으면 백돌이 돌을 잡을 수 있어요!',
+  capture: '여기에 놓으면 백돌이를 잡을 수 있어요!',
   escape: '흑돌이가 위험해요! 여기로 도망가요',
-  atari: '여기에 놓으면 백돌이 숨구멍이 하나만 남아요',
+  atari: '여기에 놓으면 백돌이의 숨구멍(활로)이 하나만 남아요',
   connect: '친구 돌 옆에 붙이면 튼튼해져요',
   shape: '다른 돌 가까이에 놓아 볼까요?',
   pass: '놓을 곳이 없어요',
@@ -71,20 +80,6 @@ const LEVELS: Record<Level, { name: string; stars: string }> = {
   3: { name: '어려워요', stars: '★★★' },
 };
 
-const LESSONS = [
-  '바둑판과 점',
-  '번갈아 놓기',
-  '숨구멍(활로)',
-  '숨구멍 하나(단수)',
-  '돌 잡기',
-  '도망가기',
-  '이어 주기와 끊기',
-  '내 땅(집)',
-  '두 개의 눈',
-  '패',
-  '끝내기와 세기',
-  '첫 바둑 한 판',
-];
 
 // ───────── 대국 진행 ─────────
 
@@ -155,6 +150,7 @@ function confirmMove() {
     render();
     return;
   }
+  sfx(r.captured.length ? 'capture' : 'stone');
   resetMarks();
   persist();
   if (g.isOver) return finishGame();
@@ -175,7 +171,10 @@ function scheduleAI() {
     }
     const c = chooseMove(game, { level: ui.level });
     if (c.point == null) game.pass();
-    else game.play(c.point);
+    else {
+      const r = game.play(c.point);
+      sfx(r.ok && r.captured.length ? 'capture' : 'stone');
+    }
     ui.aiThinking = false;
     persist();
     if (game.isOver) return finishGame();
@@ -194,7 +193,7 @@ function finishGame() {
   if (res.reason === 'capture') {
     ui.result =
       outcome === 'win'
-        ? { title: '와, 이겼어요!', body: '백돌이 돌을 먼저 잡았어요. 숨구멍을 잘 막았어요!', mood: 'wow', win: true }
+        ? { title: '와, 이겼어요!', body: '백돌이를 먼저 잡았어요. 숨구멍(활로)을 잘 막았어요!', mood: 'wow', win: true }
         : {
             title: '아쉬워요!',
             body: '백돌이가 먼저 잡았어요. 숨구멍이 하나 남으면 얼른 도망가요.',
@@ -208,6 +207,8 @@ function finishGame() {
   }
   ui.sheet = 'result';
   resetMarks();
+  if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
+  speak(`${ui.result.title} ${ui.result.body}`);
   render();
 }
 
@@ -233,6 +234,7 @@ function showHint() {
   ui.hint = c.point;
   ui.hintText = HINT_TEXT[c.reason];
   ui.preview = null;
+  speak(ui.hintText);
   render();
 }
 
@@ -256,6 +258,7 @@ function tapBoard(p: number | null) {
 
 function showToast(text: string) {
   ui.toast = text;
+  speak(text);
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
     ui.toast = null;
@@ -265,7 +268,7 @@ function showToast(text: string) {
 }
 
 function render() {
-  const nobar = ui.screen === 'game';
+  const nobar = ui.screen === 'game' || ui.screen === 'lesson';
   document.body.classList.toggle('nobar', nobar);
   app.innerHTML =
     screenHTML() +
@@ -282,6 +285,8 @@ function screenHTML(): string {
       return gameHTML();
     case 'learn':
       return learnHTML();
+    case 'lesson':
+      return ui.lesson ? ui.lesson.html() : learnHTML();
     case 'puzzle':
       return placeholderHTML('문제 놀이', '돌 잡기 문제는 곧 열려요!');
     case 'record':
@@ -303,9 +308,14 @@ function homeHTML(): string {
   const saved = loadGame();
   return `<main class="screen home">
   <header class="home-head">
-    <div class="brand"><span class="wordmark">바둑한수</span><span class="seal" aria-hidden="true">手</span></div>
-    <p class="sub">하루 한 수씩, 바둑이랑 놀아요</p>
+    <div>
+      <div class="brand"><span class="wordmark">바둑한수</span><span class="seal" aria-hidden="true">手</span></div>
+      <p class="sub">하루 한 수씩, 바둑이랑 놀아요</p>
+    </div>
+    <button class="round-btn" data-action="settings" aria-label="소리 설정">${icon('gear')}</button>
   </header>
+
+  ${learnCardHTML()}
 
   <section class="hero">
     <div class="hero-friends" aria-hidden="true">
@@ -315,7 +325,7 @@ function homeHTML(): string {
     </div>
     <div class="hero-text">
       <h2>백돌이와 따내기 바둑</h2>
-      <p>백돌이 돌을 먼저 <b>1개</b> 잡으면 이겨요!</p>
+      <p>백돌이를 먼저 <b>1개</b> 잡으면 이겨요!</p>
     </div>
     <button class="btn primary big" data-action="open-start">${saved ? '이어서 하기' : '백돌이랑 놀기'} ${icon('arrow')}</button>
   </section>
@@ -323,8 +333,8 @@ function homeHTML(): string {
   <div class="grid2">
     <button class="card" data-action="tab" data-tab="learn">
       <span class="card-ic mint">${icon('book')}</span>
-      <span class="card-title">바둑 배우기</span>
-      <span class="card-sub">곧 열려요!</span>
+      <span class="card-title">강의 목록</span>
+      <span class="card-sub">${loadLessons().done.length} / ${ALL_TITLES.length}강 배웠어요</span>
     </button>
     <button class="card" data-action="tab" data-tab="puzzle">
       <span class="card-ic sky">${icon('grid')}</span>
@@ -396,13 +406,45 @@ function gameHTML(): string {
 </main>`;
 }
 
+function nextLessonId(): number | null {
+  const done = loadLessons().done;
+  const l = LESSONS.find((x) => !done.includes(x.id));
+  return l ? l.id : null;
+}
+
+function isOpen(id: number): boolean {
+  if (id > LESSONS.length) return false;
+  const done = loadLessons().done;
+  return id === 1 || done.includes(id - 1) || done.includes(id);
+}
+
+function learnCardHTML(): string {
+  const id = nextLessonId();
+  if (id == null) {
+    return `<section class="learn-card done"><div><div class="kicker">바둑 배우기</div><h2>${LESSONS.length}강까지 다 배웠어요!</h2><p>다음 강은 곧 열려요. 백돌이와 한 판 해 볼까요?</p></div></section>`;
+  }
+  const l = LESSONS[id - 1];
+  return `<section class="learn-card">
+    <div class="learn-num">${id}<small>강</small></div>
+    <div class="learn-text"><div class="kicker">오늘 배울 것</div><h2>${l.title}<span class="term">${l.term}</span></h2><p>${l.goal}</p></div>
+    <button class="btn primary" data-action="lesson-open" data-id="${id}">${icon('play')}배우기</button>
+  </section>`;
+}
+
 function learnHTML(): string {
-  const items = LESSONS.map(
-    (t, i) =>
-      `<li class="lesson locked"><span class="lnum">${i + 1}</span><span class="ltitle">${t}</span>${icon('lock')}</li>`,
-  ).join('');
+  const done = loadLessons().done;
+  const items = ALL_TITLES.map((t, i) => {
+    const id = i + 1;
+    const open = isOpen(id);
+    const fin = done.includes(id);
+    const tag = fin ? `<span class="badge ok">${icon('check')}다 했어요</span>` : open ? '<span class="badge go">배우기</span>' : icon('lock');
+    const inner = `<span class="lnum">${id}</span><span class="ltitle">${t.title}<span class="term">${t.term}</span></span>${tag}`;
+    return open
+      ? `<li><button class="lesson ${fin ? 'fin' : ''}" data-action="lesson-open" data-id="${id}">${inner}</button></li>`
+      : `<li><div class="lesson locked">${inner}</div></li>`;
+  }).join('');
   return `<main class="screen">
-  <header class="page-head"><h1>바둑 배우기</h1><p>12개 이야기가 곧 하나씩 열려요!</p></header>
+  <header class="page-head"><h1>바둑 배우기</h1><p>하나씩 배우면 다음 강이 열려요. 파란 “바둑 말” 꼬리표는 바둑에서 쓰는 이름이에요.</p></header>
   <ol class="lessons">${items}</ol>
 </main>`;
 }
@@ -466,15 +508,39 @@ function sheetHTML(): string {
   } else if (ui.sheet === 'resign') {
     body = `<h2>그만할까요?</h2><p class="sheet-p">그만하면 이번 판은 진 판으로 적혀요.</p>
     <div class="row2"><button class="btn primary" data-action="close-sheet">계속할래요</button><button class="btn ghost" data-action="resign">그만할래요</button></div>`;
+  } else if (ui.sheet === 'settings') {
+    const st = loadSettings();
+    body = `<h2>소리 설정</h2>
+    <button class="toggle" data-action="toggle-sound" role="switch" aria-checked="${st.sound}"><span>${icon('play')}돌 놓는 소리·효과음</span><span class="sw ${st.sound ? 'on' : ''}"></span></button>
+    <button class="toggle" data-action="toggle-voice" role="switch" aria-checked="${st.voice}"><span>${icon('speaker')}글 읽어 주기</span><span class="sw ${st.voice ? 'on' : ''}"></span></button>
+    <p class="sheet-p small">소리가 안 나면 아이패드 옆 소리 크기 버튼을 올려 주세요.</p>
+    <button class="btn primary full big" data-action="close-sheet">닫기</button>`;
+  } else if (ui.sheet === 'lesson-done') {
+    const l = ui.lesson!.lesson;
+    const next = LESSONS[l.id];
+    body = `<div class="result-face">${starBurst()}${stoneFace('black', 120, 'wow')}</div>
+    <h2 class="result-title">${l.id}강 끝!</h2>
+    <p class="sheet-p center">${rich(`**${l.title}(${l.term})**${objJosa(l.title)} 다 배웠어요. 정말 잘했어요!`)}</p>
+    <div class="row2">${
+      next
+        ? `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="lesson-open" data-id="${next.id}">${next.id}강 하러 가기</button>`
+        : `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="open-start">백돌이랑 놀기</button>`
+    }</div>`;
   } else if (ui.sheet === 'result') {
     const r = ui.result;
     body = `<div class="result-face">${r.win ? starBurst() : ''}${stoneFace('black', 120, r.mood)}</div>
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
     <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>`;
   }
-  const dismissable = ui.sheet === 'start' || ui.sheet === 'resign';
+  const dismissable = ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings';
   return `<div class="sheet-backdrop" ${dismissable ? 'data-action="close-sheet"' : ''}></div>
   <div class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div>${body}</div>`;
+}
+
+/** 받침에 따라 을/를 */
+function objJosa(word: string): string {
+  const c = word.charCodeAt(word.length - 1);
+  return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0 ? '을' : '를';
 }
 
 function esc(s: string): string {
@@ -485,7 +551,12 @@ function esc(s: string): string {
 
 app.addEventListener('click', (ev) => {
   const target = ev.target as Element;
-  const svg = target.closest('.game .board-svg') as SVGSVGElement | null;
+  const lsvg = target.closest('.lesson-screen .board-svg') as SVGSVGElement | null;
+  if (lsvg && ui.lesson && !ui.sheet) {
+    ui.lesson.tapPoint(pointFromEvent(lsvg, 9, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));
+    return;
+  }
+  const svg = target.closest('.game:not(.lesson-screen) .board-svg') as SVGSVGElement | null;
   if (svg && ui.game && !ui.sheet) {
     tapBoard(pointFromEvent(svg, ui.game.size, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));
     return;
@@ -494,10 +565,59 @@ app.addEventListener('click', (ev) => {
   if (!el || (el as HTMLButtonElement).disabled) return;
   switch (el.dataset.action) {
     case 'tab':
+      ui.lesson?.stop();
+      stopSpeaking();
       ui.screen = el.dataset.tab as Screen;
       ui.sheet = null;
       break;
+    case 'lesson-open': {
+      const l = LESSONS[Number(el.dataset.id) - 1];
+      if (!l) break;
+      ui.lesson?.stop();
+      ui.sheet = null;
+      ui.screen = 'lesson';
+      ui.lesson = new LessonPlayer(l, render);
+      break;
+    }
+    case 'lesson-next':
+      if (ui.lesson?.next()) {
+        markLessonDone(ui.lesson.lesson.id);
+        ui.sheet = 'lesson-done';
+        sfx('win');
+        speak(`${ui.lesson.lesson.id}강 끝! 정말 잘했어요!`);
+      }
+      break;
+    case 'lesson-choose':
+      ui.lesson?.choose(Number(el.dataset.i));
+      return;
+    case 'lesson-say':
+      ui.lesson?.sayAgain();
+      return;
+    case 'lesson-exit':
+      ui.lesson?.stop();
+      stopSpeaking();
+      ui.screen = 'learn';
+      break;
+    case 'settings':
+      ui.sheet = 'settings';
+      break;
+    case 'toggle-sound': {
+      const st = loadSettings();
+      st.sound = !st.sound;
+      saveSettings(st);
+      if (st.sound) sfx('stone');
+      break;
+    }
+    case 'toggle-voice': {
+      const st = loadSettings();
+      st.voice = !st.voice;
+      saveSettings(st);
+      if (st.voice) speak('글을 읽어 줄게요');
+      else stopSpeaking();
+      break;
+    }
     case 'open-start':
+      if (ui.screen === 'lesson') ui.screen = 'home';
       ui.sheet = 'start';
       break;
     case 'level':
@@ -566,6 +686,8 @@ function enterGame() {
 // ───────── 시작 ─────────
 
 requestPersistence();
+// 아이패드는 첫 터치 뒤에만 소리가 난다
+document.addEventListener('pointerdown', () => unlockAudio(), { once: true });
 render();
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

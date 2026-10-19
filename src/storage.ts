@@ -78,3 +78,41 @@ export function requestPersistence(): void {
     /* 무시 */
   }
 }
+
+// ───────── 설정 ─────────
+const KEY_SETTINGS = 'baduk-settings';
+
+export interface Settings {
+  v: 1;
+  /** 돌 놓는 소리 등 효과음 */
+  sound: boolean;
+  /** 안내 문장 읽어 주기 */
+  voice: boolean;
+}
+
+export function loadSettings(): Settings {
+  return { v: 1, sound: true, voice: true, ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
+}
+export function saveSettings(s: Settings): void {
+  write(KEY_SETTINGS, s);
+}
+
+// ───────── 강의 진도 ─────────
+const KEY_LESSONS = 'baduk-lessons';
+
+export interface LessonProgress {
+  v: 1;
+  /** 끝낸 강 번호 */
+  done: number[];
+}
+
+export function loadLessons(): LessonProgress {
+  const p = read<LessonProgress>(KEY_LESSONS);
+  return p && Array.isArray(p.done) ? p : { v: 1, done: [] };
+}
+export function markLessonDone(id: number): LessonProgress {
+  const p = loadLessons();
+  if (!p.done.includes(id)) p.done.push(id);
+  write(KEY_LESSONS, p);
+  return p;
+}

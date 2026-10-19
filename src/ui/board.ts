@@ -8,6 +8,14 @@ export interface BoardView {
   hint?: number | null;
   /** 교차점별 소유 표시(계가) */
   owner?: Uint8Array | null;
+  /** 반짝이는 점선 동그라미(강의 안내) */
+  rings?: number[];
+  /** 찾은 점(초록 동그라미) */
+  goods?: number[];
+  /** '아니에요' 표시(엑스) */
+  crosses?: number[];
+  /** 방금 틀리게 누른 점 */
+  miss?: number | null;
 }
 
 const VB = 400;
@@ -75,6 +83,24 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
   if (view.hint != null) {
     const [x, y] = toXY(size, view.hint);
     marks += `<circle class="hint-ring" cx="${c(x)}" cy="${c(y)}" r="${(r * 0.8).toFixed(1)}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="6 5"/>`;
+  }
+  for (const p of view.rings ?? []) {
+    const [x, y] = toXY(size, p);
+    marks += `<circle class="hint-ring" cx="${c(x)}" cy="${c(y)}" r="${(r * 0.72).toFixed(1)}" fill="var(--accent)" fill-opacity="0.12" stroke="var(--accent)" stroke-width="3" stroke-dasharray="6 5"/>`;
+  }
+  for (const p of view.goods ?? []) {
+    const [x, y] = toXY(size, p);
+    marks += `<circle cx="${c(x)}" cy="${c(y)}" r="${(r * 0.55).toFixed(1)}" fill="#3FAE7E" stroke="#fff" stroke-width="3"/>`;
+    marks += `<path d="M${(+c(x) - 6).toFixed(1)} ${c(y)}l4 5 8-9" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+  for (const p of view.crosses ?? []) {
+    const [x, y] = toXY(size, p);
+    const d = r * 0.42;
+    marks += `<path d="M${(+c(x) - d).toFixed(1)} ${(+c(y) - d).toFixed(1)}l${(2 * d).toFixed(1)} ${(2 * d).toFixed(1)}M${(+c(x) + d).toFixed(1)} ${(+c(y) - d).toFixed(1)}l${(-2 * d).toFixed(1)} ${(2 * d).toFixed(1)}" stroke="#B83E57" stroke-width="4" stroke-linecap="round"/>`;
+  }
+  if (view.miss != null) {
+    const [x, y] = toXY(size, view.miss);
+    marks += `<circle class="miss" cx="${c(x)}" cy="${c(y)}" r="${(r * 0.6).toFixed(1)}" fill="none" stroke="#B83E57" stroke-width="3"/>`;
   }
   if (view.preview != null) {
     const [x, y] = toXY(size, view.preview);

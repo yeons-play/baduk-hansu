@@ -35,8 +35,8 @@ def shot(p, name):
         p.screenshot(path=os.path.join(SHOTS, DEV + '-' + name + '.png'))
 
 
-def tap_point(p, x, y, size=9):
-    box = p.locator('.game .board-svg').bounding_box()
+def tap_point(p, x, y, size=9, board='.game .board-svg'):
+    box = p.locator(board).bounding_box()
     M, VB = 28, 400
     st = (VB - 2 * M) / (size - 1)
     sx = box['x'] + (M + st * x) * box['width'] / VB
@@ -85,10 +85,14 @@ with sync_playwright() as pw:
       ok('착수 후 AI가 응수 (돌 2개)', stones == 2, stones)
 
       # 같은 곳 두 번 누르기로 착수
-      tap_point(p, 2, 2)
-      tap_point(p, 2, 2)
-      p.wait_for_timeout(1000)
-      stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
+      # 백돌이가 무작위로 두므로 비어 있는 곳을 골라 시도
+      for cx, cy in [(2, 2), (6, 6), (2, 6), (6, 2), (0, 8)]:
+          tap_point(p, cx, cy)
+          tap_point(p, cx, cy)
+          p.wait_for_timeout(1000)
+          stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
+          if stones == 4:
+              break
       ok('같은 곳 두 번 누르면 착수', stones == 4, stones)
 
       # 이미 돌이 있는 곳
@@ -132,8 +136,61 @@ with sync_playwright() as pw:
       # 배우기 탭
       p.click('.tabbar [data-tab="learn"]')
       p.wait_for_timeout(200)
-      ok('배우기 12강 목록', p.locator('.lesson').count() == 12)
+      ok('배우기 12강 목록', p.locator('.lessons .lesson').count() == 12)
       shot(p, '7-learn')
+
+      # ── 강의 1강 끝까지 ──
+      p.click('.tabbar [data-tab="home"]')
+      p.wait_for_timeout(200)
+      ok('홈에 오늘 배울 것(1강) 카드', '1' in p.locator('.learn-num').inner_text())
+      p.click('.learn-card [data-action="lesson-open"]')
+      p.wait_for_timeout(300)
+      ok('1강 화면, 아래 탭 숨김', p.locator('.lesson-screen').count() == 1 and p.locator('.tabbar').count() == 0)
+      ok('강의 제목에 바둑 용어', '교차점' in p.locator('.bar h1').inner_text())
+      shot(p, '8-lesson1')
+      def nxt():
+          p.click('[data-action="lesson-next"]'); p.wait_for_timeout(200)
+      nxt(); nxt()
+      ok('누르기 단계는 다음 버튼 잠김', p.locator('[data-action="lesson-next"]').is_disabled())
+      tap_point(p, 1, 1, board='.lesson-screen .board-svg')
+      ok('틀린 점 누르면 다시 안내', p.locator('.feedback.no').count() == 1)
+      tap_point(p, 4, 4, board='.lesson-screen .board-svg')
+      ok('천원 누르면 정답', p.locator('.feedback.ok').count() == 1 and not p.locator('[data-action="lesson-next"]').is_disabled())
+      shot(p, '9-lesson1-ok')
+      nxt(); nxt()
+      for x, y in [(2, 2), (6, 2), (2, 6), (6, 6)]:
+          tap_point(p, x, y, board='.lesson-screen .board-svg')
+      ok('별점 4곳 다 찾기', not p.locator('[data-action="lesson-next"]').is_disabled())
+      nxt()
+      p.click('[data-action="lesson-choose"][data-i="0"]'); p.wait_for_timeout(150)
+      ok('오답 고르면 안내', p.locator('.choice.wrong').count() == 1)
+      p.click('[data-action="lesson-choose"][data-i="1"]'); p.wait_for_timeout(150)
+      nxt()
+      ok('1강 끝 축하 화면', '1강 끝' in p.locator('.result-title').inner_text())
+      shot(p, '10-lesson-done')
+      p.click('.sheet [data-tab="learn"]'); p.wait_for_timeout(200)
+      ok('목록에서 1강 완료·2강 열림', p.locator('.lesson.fin').count() == 1 and p.locator('button.lesson').count() == 2)
+      shot(p, '11-lesson-list')
+      # 3강 숨구멍 찾기 (1·2강을 끝낸 상태로 만들고 확인)
+      p.evaluate("localStorage.setItem('baduk-lessons', JSON.stringify({v:1, done:[1,2]}))")
+      p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(100)
+      p.click('.tabbar [data-tab="learn"]'); p.wait_for_timeout(200)
+      p.click('[data-action="lesson-open"][data-id="3"]'); p.wait_for_timeout(300)
+      nxt()
+      tap_point(p, 5, 5, board='.lesson-screen .board-svg')
+      ok('대각선은 숨구멍 아님', p.locator('.feedback.no').count() == 1)
+      for x, y in [(4, 3), (3, 4), (5, 4), (4, 5)]:
+          tap_point(p, x, y, board='.lesson-screen .board-svg')
+      ok('숨구멍 4개 다 찾기', '4개' in p.locator('.feedback.ok').inner_text())
+      shot(p, '12-lesson3-libs')
+      p.click('[data-action="lesson-exit"]'); p.wait_for_timeout(200)
+      # 설정
+      p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(100)
+      p.click('[data-action="settings"]'); p.wait_for_timeout(150)
+      p.click('[data-action="toggle-voice"]'); p.wait_for_timeout(100)
+      ok('읽어 주기 끄기 저장', p.evaluate("JSON.parse(localStorage.getItem('baduk-settings')).voice") is False)
+      p.click('[data-action="toggle-voice"]'); p.wait_for_timeout(100)
+      p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(100)
 
       # 아이폰: history API 미사용
       ok('아이폰에서 방문기록을 쌓지 않음', p.evaluate('history.length') <= 2, p.evaluate('history.length'))

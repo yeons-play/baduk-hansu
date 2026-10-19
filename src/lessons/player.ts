@@ -1,0 +1,222 @@
+// 강의 진행 — 한 강의 단계를 차례로 보여주고, 누르기·고르기에 반응한다.
+import type { Game } from '../engine/rules';
+import { chooseMove } from '../engine/ai/beginner';
+import { sfx } from '../audio';
+import { speak } from '../speech';
+import { renderBoard } from '../ui/board';
+import { icon } from '../ui/icons';
+import type { Lesson, Step } from './data';
+import { buildGame, fill, pt, resolve, type Resolved } from './engine';
+
+export class LessonPlayer {
+  stepIdx = 0;
+  private r!: Resolved;
+  private found = new Set<number>();
+  private placed: number[] = [];
+  private freeGame: Game | null = null;
+  private freeCount = 0;
+  private busy = false;
+  private timer: number | undefined;
+  done = false;
+  feedback: { text: string; ok: boolean } | null = null;
+  chosen: number | null = null;
+  miss: number | null = null;
+
+  constructor(
+    readonly lesson: Lesson,
+    private rerender: () => void,
+  ) {
+    this.enter(0);
+  }
+
+  get step(): Step {
+    return this.lesson.steps[this.stepIdx];
+  }
+  get isLast(): boolean {
+    return this.stepIdx === this.lesson.steps.length - 1;
+  }
+
+  enter(i: number) {
+    window.clearTimeout(this.timer);
+    this.stepIdx = i;
+    this.r = resolve(this.step);
+    this.found = new Set();
+    this.placed = [];
+    this.freeGame = this.step.kind === 'free' ? buildGame(this.step.setup) : null;
+    this.freeCount = 0;
+    this.busy = false;
+    this.done = this.step.kind === 'explain';
+    this.feedback = null;
+    this.chosen = null;
+    this.miss = null;
+    speak(this.text());
+  }
+
+  /** 다음 단계로. 마지막이면 true(강의 끝) */
+  next(): boolean {
+    if (!this.done) return false;
+    if (this.isLast) return true;
+    this.enter(this.stepIdx + 1);
+    return false;
+  }
+
+  stop() {
+    window.clearTimeout(this.timer);
+  }
+
+  text(): string {
+    return fill(this.step.text, this.r);
+  }
+
+  sayAgain() {
+    speak(this.feedback ? this.feedback.text : this.text(), true);
+  }
+
+  private ok(text: string) {
+    this.done = true;
+    this.feedback = { text: fill(text, this.r), ok: true };
+    this.miss = null;
+    sfx('correct');
+    speak(this.feedback.text);
+  }
+
+  private no(text: string, miss: number | null = null) {
+    this.feedback = { text: fill(text, this.r), ok: false };
+    this.miss = miss;
+    sfx('wrong');
+    speak(this.feedback.text);
+  }
+
+  tapPoint(p: number | null) {
+    const s = this.step;
+    if (this.done && s.kind !== 'free') return;
+    if (s.kind === 'tap' || s.kind === 'liberties') {
+      if (p == null) return this.no('줄과 줄이 만나는 점을 눌러요');
+      if (this.found.has(p)) return;
+      if (this.r.targets.includes(p)) {
+        this.found.add(p);
+        if (s.kind === 'tap' && s.place) {
+          this.placed.push(p);
+          sfx('stone');
+        } else sfx('correct');
+        this.miss = null;
+        const need = s.kind === 'tap' && s.need === 'one' ? 1 : this.r.targets.length;
+        if (this.found.size >= need) this.ok(s.done);
+        else {
+          this.feedback = { text: `좋아요! ${this.r.targets.length - this.found.size}개 남았어요`, ok: true };
+          speak(this.feedback.text);
+        }
+      } else {
+        this.no(s.wrong, p);
+      }
+      this.rerender();
+      return;
+    }
+    if (s.kind === 'free') {
+      const g = this.freeGame!;
+      if (this.done || this.busy || p == null) {
+        if (p == null && !this.done) this.no('줄과 줄이 만나는 점을 눌러요');
+        this.rerender();
+        return;
+      }
+      const res = g.play(p);
+      if (!res.ok) {
+        this.no(res.reason === 'occupied' ? '벌써 돌이 있어요! 빈 점에 놓아요' : '거기는 놓을 수 없어요');
+        this.rerender();
+        return;
+      }
+      sfx('stone');
+      this.feedback = null;
+      this.busy = true;
+      this.rerender();
+      this.timer = window.setTimeout(() => {
+        const c = chooseMove(g, { level: 1 });
+        if (c.point != null) g.play(c.point);
+        sfx('stone');
+        this.busy = false;
+        this.freeCount++;
+        if (this.freeCount >= s.rounds) this.ok(s.done);
+        else {
+          this.feedback = { text: `백돌이가 놓았어요. 이제 다시 흑돌이 차례! — ${this.freeCount}번 했어요, ${s.rounds - this.freeCount}번 남았어요`, ok: true };
+          speak('백돌이가 놓았어요. 이제 다시 흑돌이 차례!');
+        }
+        this.rerender();
+      }, 650);
+    }
+  }
+
+  choose(i: number) {
+    const s = this.step;
+    if (s.kind !== 'choice' || this.done) return;
+    this.chosen = i;
+    if (i === this.r.answer) this.ok(s.done);
+    else this.no(s.wrong);
+    this.rerender();
+  }
+
+  // ───────── 화면 ─────────
+
+  html(): string {
+    const s = this.step;
+    const l = this.lesson;
+    const game = s.kind === 'free' ? this.freeGame! : this.placed.length ? buildGame(s.setup, this.placed) : this.r.game;
+    const board = renderBoard(game, {
+      rings: s.kind === 'liberties' ? [] : this.r.rings.filter((p) => !this.found.has(p)),
+      goods: s.kind === 'liberties' ? [...this.found] : [],
+      crosses: (s.crosses ?? []).map(pt),
+      miss: this.miss,
+      lastMove: s.kind === 'free' ? lastPlay(game) : null,
+    });
+    const dots = l.steps
+      .map((_, i) => `<span class="dot ${i < this.stepIdx ? 'past' : i === this.stepIdx ? 'now' : ''}"></span>`)
+      .join('');
+    const choices =
+      s.kind === 'choice'
+        ? `<div class="choices">${s.options
+            .map((o, i) => {
+              const state = this.chosen === i ? (i === this.r.answer ? 'right' : 'wrong') : '';
+              return `<button class="choice ${state}" data-action="lesson-choose" data-i="${i}" ${this.done ? 'disabled' : ''}>${esc(o)}</button>`;
+            })
+            .join('')}</div>`
+        : '';
+    const fb = this.feedback
+      ? `<div class="feedback ${this.feedback.ok ? 'ok' : 'no'}" role="status">${this.feedback.ok ? icon('check') : icon('help')}<span>${rich(this.feedback.text)}</span></div>`
+      : '';
+    return `<main class="screen game lesson-screen">
+  <header class="bar">
+    <button class="back" data-action="lesson-exit">${icon('chev')}뒤로</button>
+    <h1>${l.id}강 · ${esc(l.title)}<small>(${esc(l.term)})</small></h1>
+    <button class="say" data-action="lesson-say" aria-label="다시 듣기">${icon('speaker')}</button>
+  </header>
+  <div class="dots" aria-label="${l.steps.length}단계 중 ${this.stepIdx + 1}단계">${dots}</div>
+  <div class="game-layout">
+    <div class="board-col"><div class="board-wrap">${board}</div></div>
+    <div class="side">
+      <div class="lesson-card"><p>${rich(this.text())}</p></div>
+      ${choices}
+      ${fb}
+      <button class="btn primary big full next" data-action="lesson-next" ${this.done ? '' : 'disabled'}>${
+        this.done ? (this.isLast ? '다 했어요!' : '다음') : s.kind === 'choice' ? '답을 골라요' : '바둑판을 눌러요'
+      } ${this.done ? icon('arrow') : ''}</button>
+    </div>
+  </div>
+</main>`;
+  }
+}
+
+function lastPlay(g: Game): number | null {
+  const m = g.moves[g.moves.length - 1];
+  return m && m.type === 'play' ? m.point : null;
+}
+
+function esc(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+}
+
+/** **굵게** → <b>, 괄호 속 바둑 용어는 작은 꼬리표로 */
+export function rich(text: string): string {
+  return esc(text)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/\(([^)]+)\)/g, '<span class="term">$1</span>');
+}
+

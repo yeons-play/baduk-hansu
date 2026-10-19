@@ -56,10 +56,10 @@ const ILLEGAL_TEXT: Record<IllegalReason, string> = {
 };
 
 const HINT_TEXT: Record<MoveReason, string> = {
-  win: '여기에 놓으면 하양이를 잡아서 이겨요!',
-  capture: '여기에 놓으면 하양이 돌을 잡을 수 있어요!',
-  escape: '까망이가 위험해요! 여기로 도망가요',
-  atari: '여기에 놓으면 하양이 숨구멍이 하나만 남아요',
+  win: '여기에 놓으면 백돌이를 잡아서 이겨요!',
+  capture: '여기에 놓으면 백돌이 돌을 잡을 수 있어요!',
+  escape: '흑돌이가 위험해요! 여기로 도망가요',
+  atari: '여기에 놓으면 백돌이 숨구멍이 하나만 남아요',
   connect: '친구 돌 옆에 붙이면 튼튼해져요',
   shape: '다른 돌 가까이에 놓아 볼까요?',
   pass: '놓을 곳이 없어요',
@@ -194,10 +194,10 @@ function finishGame() {
   if (res.reason === 'capture') {
     ui.result =
       outcome === 'win'
-        ? { title: '와, 이겼어요!', body: '하양이 돌을 먼저 잡았어요. 숨구멍을 잘 막았어요!', mood: 'wow', win: true }
+        ? { title: '와, 이겼어요!', body: '백돌이 돌을 먼저 잡았어요. 숨구멍을 잘 막았어요!', mood: 'wow', win: true }
         : {
             title: '아쉬워요!',
-            body: '하양이가 먼저 잡았어요. 숨구멍이 하나 남으면 얼른 도망가요.',
+            body: '백돌이가 먼저 잡았어요. 숨구멍이 하나 남으면 얼른 도망가요.',
             mood: 'oops',
             win: false,
           };
@@ -215,7 +215,7 @@ function undoTurn() {
   const g = ui.game;
   if (!g || ui.aiThinking) return;
   if (!g.moves.some((m) => m.color === HUMAN)) return showToast('아직 되돌릴 수가 없어요');
-  // 하양이 수까지 함께 되돌려 다시 까망이 차례로
+  // 백돌이 수까지 함께 되돌려 다시 흑돌이 차례로
   do {
     g.undo();
   } while (g.moves.length && g.toMove !== HUMAN);
@@ -239,7 +239,7 @@ function showHint() {
 function tapBoard(p: number | null) {
   const g = ui.game;
   if (!g || p == null || g.isOver) return;
-  if (ui.aiThinking || g.toMove !== HUMAN) return showToast('하양이 차례예요. 조금만 기다려요');
+  if (ui.aiThinking || g.toMove !== HUMAN) return showToast('백돌이 차례예요. 조금만 기다려요');
   if (ui.preview === p) return confirmMove(); // 같은 곳을 한 번 더 누르면 놓기
   const r = g.check(p);
   if (!r.ok) {
@@ -314,10 +314,10 @@ function homeHTML(): string {
       <span class="bob late">${stoneFace('white', 96, 'happy')}</span>
     </div>
     <div class="hero-text">
-      <h2>하양이와 따내기 바둑</h2>
-      <p>하양이 돌을 먼저 <b>1개</b> 잡으면 이겨요!</p>
+      <h2>백돌이와 따내기 바둑</h2>
+      <p>백돌이 돌을 먼저 <b>1개</b> 잡으면 이겨요!</p>
     </div>
-    <button class="btn primary big" data-action="open-start">${saved ? '이어서 하기' : '하양이랑 놀기'} ${icon('arrow')}</button>
+    <button class="btn primary big" data-action="open-start">${saved ? '이어서 하기' : '백돌이랑 놀기'} ${icon('arrow')}</button>
   </section>
 
   <div class="grid2">
@@ -353,7 +353,7 @@ function gameHTML(): string {
             ? `${icon('bulb')}<span>${esc(ui.hintText)}</span>`
             : humanTurn
               ? '<span>놓고 싶은 곳을 눌러요</span>'
-              : '<span class="thinking">하양이가 생각하고 있어요…</span>'
+              : '<span class="thinking">백돌이가 생각하고 있어요…</span>'
         }</div>`;
   return `<main class="screen game">
   <header class="bar">
@@ -374,12 +374,12 @@ function gameHTML(): string {
       <div class="players">
         <div class="player me ${g.toMove === BLACK ? 'turn' : ''}">
           ${stoneFace('black', 56, g.toMove === BLACK ? 'happy' : 'think')}
-          <span class="pname"><b>나 · 까망이</b><small>${g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
+          <span class="pname"><b>나 · 흑돌이</b><small>${g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
           <span class="pcount" aria-label="잡은 돌">${g.captures(BLACK)}</span>
         </div>
         <div class="player ${g.toMove === WHITE ? 'turn' : ''}">
           ${stoneFace('white', 56, g.toMove === WHITE ? 'think' : 'happy')}
-          <span class="pname"><b>하양이</b><small>${g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
+          <span class="pname"><b>백돌이</b><small>${g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
           <span class="pcount" aria-label="잡은 돌">${g.captures(WHITE)}</span>
         </div>
       </div>
@@ -439,10 +439,10 @@ function sheetHTML(): string {
   let body = '';
   if (ui.sheet === 'start') {
     const saved = loadGame();
-    body = `<h2>하양이와 따내기 바둑</h2>
+    body = `<h2>백돌이와 따내기 바둑</h2>
     ${saved ? `<button class="btn primary full big" data-action="resume">하던 판 이어서 하기</button><div class="or">또는 새로 시작해요</div>` : ''}
-    <p class="sheet-label">하양이 실력</p>
-    <div class="chips" role="radiogroup" aria-label="하양이 실력">
+    <p class="sheet-label">백돌이 실력</p>
+    <div class="chips" role="radiogroup" aria-label="백돌이 실력">
       ${([1, 2, 3] as Level[])
         .map(
           (l) =>
@@ -457,9 +457,9 @@ function sheetHTML(): string {
     body = `<h2>따내기 바둑 놀이 방법</h2>
     <div class="rules-board">${renderBoard(g, { hint: 17 })}</div>
     <ol class="rules">
-      <li><b>까망이(나)</b>와 <b>하양이</b>가 번갈아 선이 만나는 곳에 돌을 놓아요.</li>
+      <li><b>흑돌이(나)</b>와 <b>백돌이</b>가 번갈아 선이 만나는 곳에 돌을 놓아요.</li>
       <li>돌 옆 위·아래·왼쪽·오른쪽 빈 곳은 돌이 숨 쉬는 <b>숨구멍</b>이에요. <small>(바둑 말로 '활로')</small></li>
-      <li>숨구멍을 모두 막으면 그 돌을 <b>잡아요!</b> 그림의 점선에 놓으면 하양이를 잡아요.</li>
+      <li>숨구멍을 모두 막으면 그 돌을 <b>잡아요!</b> 그림의 점선에 놓으면 백돌이를 잡아요.</li>
       <li>먼저 <b>1개</b>를 잡으면 이겨요. 내 숨구멍이 하나 남으면 얼른 도망가요!</li>
     </ol>
     <button class="btn primary full big" data-action="close-rules">알았어요!</button>`;

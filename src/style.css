@@ -257,3 +257,69 @@ body.nobar .toast { bottom: calc(env(safe-area-inset-bottom) + 24px); }
   .guide { min-height: 3.6rem; font-size: 1.15rem; }
   .player .face { width: 44px; height: 44px; }
 }
+
+/* ── 바둑 용어 꼬리표: 쉬운 말 뒤 괄호 속 용어 ── */
+.term { display: inline-block; margin: 0 0.15em; padding: 0 0.45em; border-radius: 999px; background: var(--sky); color: var(--sky-ink); font-family: var(--body); font-weight: 700; font-size: 0.72em; vertical-align: 0.15em; line-height: 1.6; }
+.term::before { content: '바둑 말 '; font-weight: 400; opacity: 0.75; }
+
+/* ── 홈: 오늘 배울 것 ── */
+.home-head { flex-direction: row; justify-content: space-between; align-items: flex-start; }
+.round-btn { width: 3.2rem; height: 3.2rem; border-radius: 50%; background: var(--card); border: 2px solid var(--line); display: grid; place-items: center; color: var(--sub); flex: none; }
+.learn-card { background: var(--mint); border-radius: var(--r-lg); padding: 18px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; box-shadow: 0 8px 0 #B5E3D2; }
+.learn-card.done { display: block; }
+.learn-num { width: 4.2rem; height: 4.2rem; border-radius: 50%; background: #fff; color: var(--mint-ink); font-family: var(--title); font-size: 2rem; display: grid; place-items: center; flex: none; line-height: 1; }
+.learn-num small { font-size: 0.9rem; display: block; margin-top: -0.6rem; }
+.learn-text { flex: 1 1 200px; min-width: 0; }
+.learn-text .kicker, .learn-card .kicker { font-family: var(--title); font-size: 1rem; color: var(--mint-ink); }
+.learn-card h2 { font-family: var(--title); font-weight: 400; font-size: 1.55rem; line-height: 1.35; }
+.learn-card p { color: #3F6C5C; font-size: 1.05rem; }
+.learn-card .btn { flex: 1 1 160px; max-width: 240px; }
+
+/* ── 강의 목록 ── */
+.lessons li { list-style: none; }
+.lessons .lesson { width: 100%; }
+button.lesson { box-shadow: 0 4px 0 var(--line); }
+button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--line); }
+.lesson.fin { background: #F3FBF8; border-color: #BFE7D6; }
+.badge { display: inline-flex; align-items: center; gap: 2px; font-family: var(--title); font-size: 0.95rem; padding: 4px 12px; border-radius: 999px; flex: none; }
+.badge.ok { background: var(--mint); color: var(--mint-ink); }
+.badge.go { background: var(--primary); color: #fff; }
+.badge .ic { width: 1em; height: 1em; }
+
+/* ── 강의 화면 ── */
+.bar h1 small { display: block; font-size: 0.75em; color: var(--sky-ink); font-family: var(--body); font-weight: 700; }
+.say { width: 3.2rem; height: 3.2rem; border-radius: 50%; background: var(--sky); color: var(--sky-ink); display: grid; place-items: center; justify-self: end; }
+.dots { display: flex; justify-content: center; gap: 8px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--line2); }
+.dot.past { background: var(--mint-ink); }
+.dot.now { background: var(--primary); transform: scale(1.25); }
+.lesson-card { background: var(--card); border: 3px solid var(--line); border-radius: var(--r-md); padding: 18px 20px; }
+.lesson-card p { font-size: 1.3rem; line-height: 1.7; }
+.lesson-card b { color: var(--primary); }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.choice { min-height: 4rem; border-radius: var(--r-md); border: 3px solid var(--line2); background: var(--card); font-family: var(--title); font-size: 1.35rem; text-align: center; box-shadow: 0 4px 0 var(--line); }
+.choice.right { border-color: #3FAE7E; background: #E9F8F1; color: var(--mint-ink); }
+.choice.wrong { border-color: #E59AAA; background: var(--pink); color: var(--pink-ink); animation: shake 0.35s; }
+.choice:disabled { opacity: 1; }
+.feedback { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; border-radius: var(--r-md); font-size: 1.2rem; line-height: 1.6; }
+.feedback .ic { width: 1.6em; height: 1.6em; margin-top: 0.1em; }
+.feedback.ok { background: #E9F8F1; color: #23614C; }
+.feedback.no { background: var(--pink); color: #8E2F44; }
+.feedback b { color: inherit; }
+.lesson-screen .next { margin-top: auto; }
+.lesson-screen .board-wrap { width: min(100%, 700px, calc(100dvh - 420px)); }
+.miss { animation: shake 0.35s; }
+@keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+@media (orientation: landscape) and (min-width: 900px) {
+  .lesson-screen .board-wrap { width: min(calc(100dvh - 170px), 58vw); }
+}
+
+/* ── 설정 ── */
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 4rem; padding: 0 16px; border-radius: var(--r-md); border: 2px solid var(--line); font-family: var(--title); font-size: 1.2rem; }
+.toggle > span:first-child { display: flex; align-items: center; gap: 10px; }
+.sw { width: 3.4rem; height: 2rem; border-radius: 999px; background: var(--line2); position: relative; flex: none; transition: background 0.2s; }
+.sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 1.55rem; height: 1.55rem; border-radius: 50%; background: #fff; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.sw.on { background: #3FAE7E; }
+.sw.on::after { transform: translateX(1.4rem); }
+.sheet-p.small { font-size: 0.95rem; color: var(--sub); }
+@media (prefers-reduced-motion: reduce) { .choice.wrong, .miss { animation: none; } }

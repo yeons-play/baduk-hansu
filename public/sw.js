@@ -3,7 +3,7 @@
 // - 빌드 파일(assets/, icons/): 저장본 우선, 처음 받을 때 저장
 // - 새 버전은 바로 적용하되 열려 있는 화면을 강제로 새로고침하지 않음 → 대국 중 끊김 없음
 // - 캐시 저장소는 같은 주소의 다른 앱과 공유되므로, 지울 때는 반드시 baduk- 접두어만
-const CACHE_NAME = 'baduk-v2'; // 2026-10-19 어린이·아이패드 디자인
+const CACHE_NAME = 'baduk-v3'; // 2026-10-19 1~3강·효과음·읽어 주기
 const MINE = (k) => k.startsWith('baduk-');
 const SCOPE = new URL(self.registration.scope).pathname;
 const PAGE = SCOPE + 'index.html';

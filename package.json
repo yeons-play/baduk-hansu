@@ -1,0 +1,22 @@
+{
+  "name": "baduk-hansu",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "test:ui": "npm run build && python3 tests/ui_smoke.py"
+  },
+  "devDependencies": {
+    "@sabaki/go-board": "^1.4.3",
+    "@types/node": "^22.20.5",
+    "fast-check": "^4.10.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,28 @@
+# 바둑한수 — 작업 지침
+
+개인용 아이폰 바둑 학습 PWA. 사용자는 바둑을 처음 배우는 1명. 배포: https://yeons-play.github.io/baduk-hansu/
+
+## 절대 원칙
+- 규칙은 `docs/rules.md`가 유일한 기준. 규칙 판단 코드는 `src/engine/rules/game.ts`에만 둔다. AI·레슨·화면에서 합법 여부를 따로 판단하지 말고 엔진의 `check`/`isLegal`/`play`만 호출.
+- 규칙 엔진을 고치면 `npm test` 전부 통과해야 한다(함정 사례 + 무작위 불변식 + 사바키 교차 대조).
+- 문제·레슨 데이터는 엔진으로 재생해 검증된 것만 앱에 넣는다.
+- '최선수', '승률' 같은 고급 분석 표현 금지(KataGo 미연결 상태).
+- 월 운영비 0원: 서버·유료 API 없음.
+
+## 저장소·캐시 이름 (반드시 지킬 것)
+- 브라우저 저장 공간은 주소(yeons-play.github.io) 단위로 공유된다. 같은 조직에 앱이 늘어나도 충돌하지 않도록:
+  - Cache Storage 이름, IndexedDB 이름, localStorage 키는 모두 `baduk-` 접두어.
+  - 서비스워커가 옛 캐시를 지울 때는 `baduk-`로 시작하는 것만 지운다.
+
+## 아이폰 동작 기준 (법ON 앱 방식 참고)
+- 뒤로가기: 아이폰·아이패드에서는 history API를 쓰지 않는다. 아래 탭과 화면 안 '← 뒤로' 버튼으로만 이동.
+- 학습·대국 화면은 아래 탭을 숨긴다. 대국 중 '나가기'는 자동 저장 후 홈으로(기권 처리 아님).
+- `viewport-fit=cover` + `env(safe-area-inset-*)` 여백, 두 번 탭 확대 방지(`touch-action: manipulation`), 탭 강조색 제거, 시트·목록은 `overscroll-behavior: contain`, 높이는 `100dvh`.
+- 바둑판 위에서는 길게 누르기 메뉴·텍스트 선택을 막는다. 착수는 미리보기 → '착수' 확정.
+- 업데이트: 화면은 네트워크 우선(3초 제한) 후 저장본. 새 버전은 사용 중이 아닐 때 적용하고 **대국 중에는 절대 새로고침하지 않는다**.
+- 저장: `navigator.storage.persist()` 요청. 백업은 공유 시트(Web Share API)로 JSON·SGF 내보내기.
+
+## 개발
+- `npm test` 전체 테스트, `RANDOM_GAMES=2000 npm test`로 무작위 대국 수를 늘려 더 강하게 검사.
+- `npm run build` 타입 검사 후 빌드.
+- 문체: 사용자에게 보이는 문구는 쉬운 한국어, 초보자 기준.

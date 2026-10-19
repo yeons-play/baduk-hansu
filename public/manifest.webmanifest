@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "바둑한수 - 하루 한 수씩 바둑 배우기",
+  "short_name": "바둑한수",
+  "description": "바둑을 처음 배우는 사람을 위한 학습 앱",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F2EEE6",
+  "theme_color": "#F2EEE6",
+  "lang": "ko",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

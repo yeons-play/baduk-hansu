@@ -18,6 +18,8 @@ srv = socketserver.TCPServer(('127.0.0.1', 8781), functools.partial(Q, directory
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 URL = 'http://127.0.0.1:8781/baduk-hansu/'
 IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+DEVICES = [('아이패드 세로', IPAD, 820, 1180), ('아이패드 가로', IPAD, 1180, 820), ('아이폰', IOS, 390, 844)]
 fails = []
 
 
@@ -30,7 +32,7 @@ def ok(name, cond, info=''):
 def shot(p, name):
     if SHOTS:
         os.makedirs(SHOTS, exist_ok=True)
-        p.screenshot(path=os.path.join(SHOTS, name + '.png'))
+        p.screenshot(path=os.path.join(SHOTS, DEV + '-' + name + '.png'))
 
 
 def tap_point(p, x, y, size=9):
@@ -45,93 +47,101 @@ def tap_point(p, x, y, size=9):
 
 with sync_playwright() as pw:
     b = pw.chromium.launch()
-    ctx = b.new_context(user_agent=IOS, viewport={'width': 390, 'height': 844}, device_scale_factor=2, has_touch=True, is_mobile=True)
-    p = ctx.new_page()
-    errors = []
-    p.on('pageerror', lambda e: errors.append(str(e)))
-    p.goto(URL)
-    p.wait_for_timeout(600)
-    shot(p, '1-home')
-    ok('홈 화면 표시', p.locator('.wordmark').inner_text() == '바둑한수')
-    ok('아래 탭 4개', p.locator('.tabbar button').count() == 4)
+    for DEV, UA, W, H in DEVICES:
+      print('──', DEV)
+      ctx = b.new_context(user_agent=UA, viewport={'width': W, 'height': H}, device_scale_factor=2, has_touch=True, is_mobile=(UA == IOS))
+      p = ctx.new_page()
+      errors = []
+      p.on('pageerror', lambda e: errors.append(str(e)))
+      p.goto(URL)
+      p.wait_for_timeout(600)
+      shot(p, '1-home')
+      ok('홈 화면 표시', p.locator('.wordmark').inner_text() == '바둑한수')
+      ok('아래 탭 4개', p.locator('.tabbar button').count() == 4)
 
-    p.click('[data-action="open-start"]')
-    p.wait_for_timeout(200)
-    shot(p, '2-start-sheet')
-    ok('시작 시트 열림', p.locator('.sheet h2').inner_text() == '따내기 바둑')
-    p.click('[data-action="start"]')
-    p.wait_for_timeout(300)
-    ok('첫 대국은 규칙 안내가 먼저 나옴', p.locator('.sheet h2').inner_text() == '따내기 바둑 규칙')
-    shot(p, '3-rules')
-    p.click('[data-action="close-rules"]')
-    p.wait_for_timeout(200)
-    ok('대국 화면에서 아래 탭 숨김', p.locator('.tabbar').count() == 0)
+      p.click('[data-action="open-start"]')
+      p.wait_for_timeout(200)
+      shot(p, '2-start-sheet')
+      ok('시작 시트 열림', '따내기 바둑' in p.locator('.sheet h2').inner_text())
+      p.click('[data-action="start"]')
+      p.wait_for_timeout(300)
+      ok('첫 대국은 규칙 안내가 먼저 나옴', '놀이 방법' in p.locator('.sheet h2').inner_text())
+      shot(p, '3-rules')
+      p.click('[data-action="close-rules"]')
+      p.wait_for_timeout(200)
+      ok('대국 화면에서 아래 탭 숨김', p.locator('.tabbar').count() == 0)
+      vh = p.evaluate('innerHeight')
+      tb = p.locator('.tools').bounding_box()
+      ok('스크롤 없이 도구 버튼까지 한 화면에 보임', tb['y'] + tb['height'] <= vh + 1, (tb, vh))
+      bb = p.locator('.board-wrap').bounding_box()
+      ok('바둑판이 충분히 큼(짧은 변의 55% 이상)', bb['width'] >= min(W, H) * 0.55, (bb['width'], W, H))
 
-    tap_point(p, 4, 4)
-    ok('첫 터치는 미리보기', p.locator('.confirm').count() == 1)
-    shot(p, '4-preview')
-    p.click('[data-action="confirm"]')
-    p.wait_for_timeout(1000)
-    stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
-    ok('착수 후 AI가 응수 (돌 2개)', stones == 2, stones)
+      tap_point(p, 4, 4)
+      ok('첫 터치는 미리보기', p.locator('.confirm').count() == 1)
+      shot(p, '4-preview')
+      p.click('[data-action="confirm"]')
+      p.wait_for_timeout(1000)
+      stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
+      ok('착수 후 AI가 응수 (돌 2개)', stones == 2, stones)
 
-    # 같은 곳 두 번 누르기로 착수
-    tap_point(p, 2, 2)
-    tap_point(p, 2, 2)
-    p.wait_for_timeout(1000)
-    stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
-    ok('같은 곳 두 번 누르면 착수', stones == 4, stones)
+      # 같은 곳 두 번 누르기로 착수
+      tap_point(p, 2, 2)
+      tap_point(p, 2, 2)
+      p.wait_for_timeout(1000)
+      stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
+      ok('같은 곳 두 번 누르면 착수', stones == 4, stones)
 
-    # 이미 돌이 있는 곳
-    tap_point(p, 4, 4)
-    ok('돌 있는 곳 누르면 안내', '이미 돌이' in (p.locator('.toast').inner_text() if p.locator('.toast').count() else ''))
+      # 이미 돌이 있는 곳
+      tap_point(p, 4, 4)
+      ok('돌 있는 곳 누르면 안내', '벌써 돌이' in (p.locator('.toast').inner_text() if p.locator('.toast').count() else ''))
 
-    p.click('[data-action="hint"]')
-    p.wait_for_timeout(150)
-    ok('힌트 표시', p.locator('.hint-ring').count() == 1)
-    shot(p, '5-hint')
+      p.click('[data-action="hint"]')
+      p.wait_for_timeout(150)
+      ok('힌트 표시', p.locator('.hint-ring').count() == 1)
+      shot(p, '5-hint')
 
-    p.click('[data-action="undo"]')
-    p.wait_for_timeout(200)
-    stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
-    ok('무르기는 AI 수까지 함께 되돌림', stones == 2, stones)
+      p.click('[data-action="undo"]')
+      p.wait_for_timeout(200)
+      stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
+      ok('무르기는 AI 수까지 함께 되돌림', stones == 2, stones)
 
-    # 나가기 → 홈 → 이어두기
-    p.click('[data-action="exit-game"]')
-    p.wait_for_timeout(200)
-    ok('나가기는 홈으로', p.locator('.home').count() == 1)
-    ok('홈 버튼이 이어서 두기로 바뀜', '이어서' in p.locator('[data-action="open-start"]').inner_text())
-    p.reload()
-    p.wait_for_timeout(500)
-    p.click('[data-action="open-start"]')
-    p.click('[data-action="resume"]')
-    p.wait_for_timeout(300)
-    stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
-    ok('새로고침 후 이어두기 복원', stones == 2, stones)
-    ok('두 번째부터는 규칙 안내 생략', p.locator('.sheet').count() == 0)
+      # 나가기 → 홈 → 이어두기
+      p.click('[data-action="exit-game"]')
+      p.wait_for_timeout(200)
+      ok('나가기는 홈으로', p.locator('.home').count() == 1)
+      ok('홈 버튼이 이어서 두기로 바뀜', '이어서' in p.locator('[data-action="open-start"]').inner_text())
+      p.reload()
+      p.wait_for_timeout(500)
+      p.click('[data-action="open-start"]')
+      p.click('[data-action="resume"]')
+      p.wait_for_timeout(300)
+      stones = p.evaluate("document.querySelectorAll('.game .board-svg circle[fill^=\"url(#g\"]').length")
+      ok('새로고침 후 이어두기 복원', stones == 2, stones)
+      ok('두 번째부터는 규칙 안내 생략', p.locator('.sheet').count() == 0)
 
-    # 기권 → 결과
-    p.click('[data-action="ask-resign"]')
-    p.click('[data-action="resign"]')
-    p.wait_for_timeout(200)
-    ok('기권 후 결과 시트', p.locator('.result-title').count() == 1)
-    shot(p, '6-result')
-    p.click('[data-action="go-home"]')
-    p.wait_for_timeout(200)
-    ok('기록에 1패 반영', '1' in p.locator('.stat-row .stat').nth(2).inner_text())
+      # 기권 → 결과
+      p.click('[data-action="ask-resign"]')
+      p.click('[data-action="resign"]')
+      p.wait_for_timeout(200)
+      ok('기권 후 결과 시트', p.locator('.result-title').count() == 1)
+      shot(p, '6-result')
+      p.click('[data-action="go-home"]')
+      p.wait_for_timeout(200)
+      ok('기록에 1패 반영', '1' in p.locator('.stat-row .stat').nth(2).inner_text())
 
-    # 배우기 탭
-    p.click('.tabbar [data-tab="learn"]')
-    p.wait_for_timeout(200)
-    ok('배우기 12강 목록', p.locator('.lesson').count() == 12)
-    shot(p, '7-learn')
+      # 배우기 탭
+      p.click('.tabbar [data-tab="learn"]')
+      p.wait_for_timeout(200)
+      ok('배우기 12강 목록', p.locator('.lesson').count() == 12)
+      shot(p, '7-learn')
 
-    # 아이폰: history API 미사용
-    ok('아이폰에서 방문기록을 쌓지 않음', p.evaluate('history.length') <= 2, p.evaluate('history.length'))
-    ok('스크립트 오류 없음', not errors, errors)
+      # 아이폰: history API 미사용
+      ok('아이폰에서 방문기록을 쌓지 않음', p.evaluate('history.length') <= 2, p.evaluate('history.length'))
+      ok('스크립트 오류 없음', not errors, errors)
 
-    # 가로 넘침 없음
-    ok('가로 스크롤 없음', p.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+      # 가로 넘침 없음
+      ok('가로 스크롤 없음', p.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+      ctx.close()
     b.close()
 
 srv.shutdown()

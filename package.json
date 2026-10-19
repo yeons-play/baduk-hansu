@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "test:ui": "npm run build && python3 tests/ui_smoke.py"
   },
   "devDependencies": {
     "@sabaki/go-board": "^1.4.3",

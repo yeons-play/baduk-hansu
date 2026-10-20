@@ -53,7 +53,7 @@
 
 ### npm 설치가 막힌 작업 환경
 - 일부 세션은 npm 레지스트리가 막혀 `npm ci`가 실패한다. 그때는 `bun test`로 대신 검사한다: `node_modules/vitest/index.js`에 `export { describe, it, test, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test';` 흉내 파일을 두면 규칙·강의·AI·저장 테스트가 돈다(무작위 대국·사바키 대조는 PR 자동 검사에서 확인).
-- 타입 검사는 전역 `tsc`, 화면 검사는 `bun build`로 임시 빌드(글꼴 CSS는 빈 흉내 파일) 후 `tests/ui_smoke.py`. 실제 vite 빌드는 배포 단계에서 확인된다.
+- 타입 검사는 전역 `tsc`(주의: `--types ""`는 옵션 오류로 바로 끝나 아무것도 검사하지 않는다. `{"extends":"./tsconfig.json","compilerOptions":{"types":[]},"include":["src"]}` 임시 설정으로 돌리고, `import.meta.env` 오류만 무시), 화면 검사는 `bun build`로 임시 빌드(글꼴 CSS는 빈 흉내 파일) 후 `tests/ui_smoke.py`. 실제 vite 빌드는 배포 단계에서 확인된다.
 
 ## 4. 알아 둘 함정
 

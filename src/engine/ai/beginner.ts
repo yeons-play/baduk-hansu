@@ -36,11 +36,12 @@ export function chooseMove(game: Game, opts: AIOptions): AIChoice {
   const myAtari = atariGroups(game, me);
   const oversight = rand() < OVERSIGHT[level];
   const owner = game.rules.mode === 'normal' ? settledOwner(game) : null;
+  const infl = owner ? influence(game) : null;
 
   let best: { point: number; score: number; reason: MoveReason } | null = null;
   let bestRaw = -Infinity;
   for (const p of legal) {
-    const { score, reason } = evaluate(game, p, me, myAtari, level, oversight, owner);
+    const { score, reason } = evaluate(game, p, me, myAtari, level, oversight, owner, infl);
     if (score > bestRaw) bestRaw = score;
     const noisy = score + (NOISE[level] ? (rand() - 0.5) * NOISE[level] : 0);
     if (!best || noisy > best.score) best = { point: p, score: noisy, reason };
@@ -57,6 +58,7 @@ function evaluate(
   level: Level,
   oversight: boolean,
   owner: Uint8Array | null,
+  infl: Int16Array | null,
 ): { score: number; reason: MoveReason } {
   const opp = opponent(me);
   const size = game.size;
@@ -65,6 +67,9 @@ function evaluate(
   // 정규 대국: 두기 전의 집 모양
   const ownedBy = owner ? owner[p] : -1;
   const ownEye = owner ? game.geo.neighbors[p].every((q) => game.at(q) === me) : false;
+  // 정규 대국: 이 수로 내 세력권이 얼마나 넓어지는지(뭉쳐 두면 거의 늘지 않음)
+  const gain = infl ? territoryGain(game, infl, p, me) : 0;
+  const square = owner ? makesSquare(game, p, me) : false;
 
   // 모양 점수: 1·2선은 초반에 피하고, 다른 돌 근처를 선호
   const [x, y] = toXY(size, p);
@@ -117,7 +122,7 @@ function evaluate(
     // 이어서 활로가 늘어나면 가산
     let friendly = 0;
     for (const nb of game.geo.neighbors[p]) if (game.at(nb) === me) friendly++;
-    if (friendly > 0 && myLibs >= 3) {
+    if (friendly > 0 && myLibs >= 3 && !owner) {
       score += 6;
       if (reason === 'shape') reason = 'connect';
     }
@@ -129,8 +134,13 @@ function evaluate(
       if (ownedBy === me && !saving) score -= 25; // 이미 내 집
       else if (ownedBy === opp && cap === 0) score -= 18; // 상대 집 안에 뛰어들기는 자제
       else if (ownedBy === EMPTY) {
-        score += 10; // 아직 누구 집도 아닌 곳 넓히기
-        if (reason === 'shape') reason = 'territory';
+        score += 4 * gain; // 아직 누구 집도 아닌 곳을 넓히는 만큼
+        if (gain > 0 && reason === 'shape') reason = 'territory';
+      }
+      // 내 돌끼리 뭉치기(덩어리·네모 모양)는 집을 넓히지 못하니 피한다
+      if (!saving && cap === 0) {
+        if (friendly >= 2) score -= 8 * (friendly - 1);
+        if (square) score -= 12;
       }
       // 내 울타리 안에 들어온 상대 돌(사석)은 끝까지 쫓아 잡는다 — 이 규칙은 판 위 돌을 모두 산 돌로 세므로
       if (myLibs >= 2) {
@@ -229,6 +239,88 @@ function isInvader(game: Game, stones: number[], me: Stone): boolean {
   }
   // 넓은 곳에 둘러싸인 큰 무리는 스스로 살 수 있으니 침입자로 보지 않는다(작은 곳만)
   return size <= limit && border.size > 0;
+}
+
+/**
+ * 세력 지도: 돌마다 거리 3까지 (4 - 거리)만큼 영향을 준다(흑 +, 백 -).
+ * 값이 ±INFL_T 이상이면 그쪽 세력권으로 본다. 집 계산이 아니라 '어디가 넓은 곳인지' 고르는 데만 쓴다.
+ */
+const INFL_R = 3;
+const INFL_T = 3;
+
+function influence(game: Game): Int16Array {
+  const n = game.geo.n;
+  const size = game.size;
+  const infl = new Int16Array(n);
+  for (let p = 0; p < n; p++) {
+    const c = game.at(p);
+    if (c === EMPTY) continue;
+    const sgn = c === BLACK ? 1 : -1;
+    const [x, y] = toXY(size, p);
+    forNear(size, x, y, (q, d) => (infl[q] += sgn * (INFL_R + 1 - d)));
+  }
+  return infl;
+}
+
+function forNear(size: number, x: number, y: number, f: (q: number, d: number) => void): void {
+  for (let dy = -INFL_R; dy <= INFL_R; dy++) {
+    for (let dx = -INFL_R; dx <= INFL_R; dx++) {
+      const d = Math.abs(dx) + Math.abs(dy);
+      if (d > INFL_R) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+      f(ny * size + nx, d);
+    }
+  }
+}
+
+/** p에 me가 두면 내 세력권(빈 점) 수에서 상대 세력권 수를 뺀 값이 얼마나 느는지 */
+function territoryGain(game: Game, infl: Int16Array, p: number, me: Stone): number {
+  const sgn = me === BLACK ? 1 : -1;
+  const cls = (v: number) => (v >= INFL_T ? 1 : v <= -INFL_T ? -1 : 0);
+  const [x, y] = toXY(game.size, p);
+  let gain = 0;
+  forNear(game.size, x, y, (q, d) => {
+    if (q !== p && game.at(q) !== EMPTY) return;
+    const before = infl[q] * sgn;
+    gain += cls(before + (INFL_R + 1 - d)) - cls(before);
+  });
+  return gain;
+}
+
+/** p에 두면 내 돌 네 개가 네모(2×2)로 뭉치는지 */
+function makesSquare(game: Game, p: number, me: Stone): boolean {
+  const size = game.size;
+  const [x, y] = toXY(size, p);
+  for (const [ax, ay] of [
+    [-1, -1],
+    [0, -1],
+    [-1, 0],
+    [0, 0],
+  ]) {
+    let all = true;
+    for (const [bx, by] of [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1],
+    ]) {
+      const cx = x + ax + bx;
+      const cy = y + ay + by;
+      if (cx < 0 || cy < 0 || cx >= size || cy >= size) {
+        all = false;
+        break;
+      }
+      const q = cy * size + cx;
+      if (q !== p && game.at(q) !== me) {
+        all = false;
+        break;
+      }
+    }
+    if (all) return true;
+  }
+  return false;
 }
 
 /** 해당 색의 단수(활로 1) 그룹 대표점 목록 */

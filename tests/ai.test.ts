@@ -134,3 +134,50 @@ describe('집 짓는 바둑 AI', () => {
     expect(chooseMove(g, { level: 2, rand: rng(5) }).point).toBeNull();
   });
 });
+
+describe('집 짓는 바둑 AI 모양', () => {
+  const squares = (g: Game) => {
+    let n = 0;
+    for (let y = 0; y < g.size - 1; y++)
+      for (let x = 0; x < g.size - 1; x++) {
+        const c = g.atXY(x, y);
+        if (c && c === g.atXY(x + 1, y) && c === g.atXY(x, y + 1) && c === g.atXY(x + 1, y + 1)) n++;
+      }
+    return n;
+  };
+
+  it('초반 20수 동안 돌을 네모(2×2)로 뭉치지 않는다', () => {
+    for (let i = 0; i < 10; i++) {
+      const rand = rng(900 + i);
+      const g = new Game({ size: 9, mode: 'normal' });
+      for (let n = 0; n < 20 && !g.isOver; n++) {
+        const c = chooseMove(g, { level: (((i + n) % 2) + 2) as Level, rand });
+        if (c.point === null) g.pass();
+        else g.play(c.point);
+      }
+      expect(squares(g)).toBe(0);
+    }
+  });
+
+  it('빈 곳이 넓으면 자기 돌 옆에 붙이기보다 넓은 쪽으로 벌린다', () => {
+    // 백 돌 넷이 뭉쳐 있고 오른쪽·아래가 넓게 비어 있음 — 백은 덩어리에 또 붙이지 않는다
+    const g = Game.fromDiagram(
+      [
+        '. . . . . . . . .',
+        '. . . . . . . . .',
+        '. . O O O . . . .',
+        '. . O O . . . . .',
+        '. . . . . . . . .',
+        '. . X . . . X . .',
+        '. . . . . . . . .',
+        '. . . . . . . . .',
+        '. . . . . . . . .',
+      ],
+      WHITE,
+    );
+    const c = chooseMove(g, { level: 3, rand: rng(11) });
+    expect(c.point).not.toBeNull();
+    const own = g.geo.neighbors[c.point!].filter((q) => g.at(q) === WHITE).length;
+    expect(own).toBeLessThanOrEqual(1);
+  });
+});

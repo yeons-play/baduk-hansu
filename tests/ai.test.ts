@@ -223,3 +223,42 @@ describe('초보다운 실수(이상한 수는 두지 않음)', () => {
     expect(missed).toBeLessThan(160);
   });
 });
+
+describe('초반 운영(귀 → 변 → 가운데)', () => {
+  const quad = (size: number, p: number) => {
+    const x = p % size, y = Math.floor(p / size), m = (size - 1) / 2;
+    return x === m || y === m ? -1 : (x < m ? 0 : 1) + (y < m ? 0 : 2);
+  };
+  for (const size of [9, 13]) {
+    it(`${size}줄: 어느 단계든 처음 네 수는 서로 다른 빈 귀의 3·4선`, () => {
+      for (let i = 0; i < 12; i++) {
+        const rand = rng(2000 + size * 10 + i);
+        const g = new Game({ size, mode: 'normal' });
+        const qs = new Set<number>();
+        for (let n = 0; n < 4; n++) {
+          const c = chooseMove(g, { level: ((i % 3) + 1) as Level, rand });
+          expect(c.reason).toBe('corner');
+          const p = c.point!;
+          const line = (v: number) => Math.min(v, size - 1 - v) + 1;
+          expect([3, 4]).toContain(line(p % size));
+          expect([3, 4]).toContain(line(Math.floor(p / size)));
+          qs.add(quad(size, p));
+          g.play(p);
+        }
+        expect(qs.size).toBe(4);
+      }
+    });
+  }
+
+  it('13줄: 하양이 귀에 걸쳐 오면 귀를 지키며 받는다', () => {
+    // 흑 (3,3)·(9,3), 백 (9,9)·(3,9) — 귀 넷이 찼고, 흑이 백 (9,9)에 날일자로 걸침 (7,10)
+    const g = new Game({ size: 13, mode: 'normal' });
+    for (const [x, y] of [[3, 3], [9, 9], [9, 3], [3, 9], [7, 10]]) g.play(toPoint(13, x, y));
+    for (let i = 0; i < 10; i++) {
+      const c = chooseMove(g, { level: 3, rand: rng(70 + i) });
+      expect(c.reason).toBe('answer');
+      const [x, y] = [c.point! % 13, Math.floor(c.point! / 13)];
+      expect(Math.max(Math.abs(x - 7), Math.abs(y - 10))).toBeLessThanOrEqual(3); // 걸쳐 온 돌 가까이
+    }
+  });
+});

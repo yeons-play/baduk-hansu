@@ -3,6 +3,8 @@
 하루 한 수씩, 바둑을 배우다 — 바둑을 처음 배우는 사람을 위한 개인용 아이폰 학습 앱(PWA).
 
 - 주소(배포 후): https://yeons-play.github.io/baduk-hansu/
+- 이어서 작업할 때 먼저 읽기: [docs/HANDOFF.md](docs/HANDOFF.md)
+- 계획: [docs/plan.md](docs/plan.md)
 - 규칙 명세: [docs/rules.md](docs/rules.md)
 
 ## 진행 상황

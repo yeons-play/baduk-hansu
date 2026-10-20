@@ -31,15 +31,19 @@ function hasFinal(word: string): boolean {
   return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0;
 }
 
+/** 읽어 주기 빠르기: 느리게는 처음 배우는 아이용 */
+const RATE = { slow: 0.75, normal: 0.92 } as const;
+
 export function speak(text: string, force = false): void {
-  if (!force && !loadSettings().voice) return;
+  const st = loadSettings();
+  if (!force && !st.voice) return;
   try {
     const s = window.speechSynthesis;
     if (!s) return;
     s.cancel();
     const u = new SpeechSynthesisUtterance(toSpeech(text));
     u.lang = 'ko-KR';
-    u.rate = 0.92;
+    u.rate = RATE[st.rate] ?? RATE.normal;
     u.pitch = 1.1;
     const v = pickVoice();
     if (v) u.voice = v;

@@ -88,10 +88,12 @@ export interface Settings {
   sound: boolean;
   /** 안내 문장 읽어 주기 */
   voice: boolean;
+  /** 읽어 주기 빠르기 */
+  rate: 'slow' | 'normal';
 }
 
 export function loadSettings(): Settings {
-  return { v: 1, sound: true, voice: true, ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
+  return { v: 1, sound: true, voice: true, rate: 'normal', ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
 }
 export function saveSettings(s: Settings): void {
   write(KEY_SETTINGS, s);
@@ -115,4 +117,61 @@ export function markLessonDone(id: number): LessonProgress {
   if (!p.done.includes(id)) p.done.push(id);
   write(KEY_LESSONS, p);
   return p;
+}
+
+/** 강의 진도를 처음부터(전적·설정은 그대로) */
+export function resetLessons(): void {
+  remove(KEY_LESSONS);
+}
+
+// ───────── 백업 ─────────
+// baduk- 로 시작하는 저장값만 묶어서 JSON으로 내보내고 불러온다.
+const BACKUP_APP = 'baduk-hansu';
+
+export interface Backup {
+  app: typeof BACKUP_APP;
+  v: 1;
+  exportedAt: string;
+  data: Record<string, string>;
+}
+
+export function exportBackup(now = new Date()): Backup {
+  const data: Record<string, string> = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('baduk-')) continue;
+      const v = localStorage.getItem(k);
+      if (v != null) data[k] = v;
+    }
+  } catch {
+    /* 저장 공간을 못 읽으면 빈 백업 */
+  }
+  return { app: BACKUP_APP, v: 1, exportedAt: now.toISOString(), data };
+}
+
+/** 백업 글을 검사해 되살린다. 형식이 맞지 않으면 아무것도 바꾸지 않고 false */
+export function importBackup(text: string): boolean {
+  let b: Backup;
+  try {
+    b = JSON.parse(text) as Backup;
+  } catch {
+    return false;
+  }
+  if (!b || b.app !== BACKUP_APP || b.v !== 1 || typeof b.data !== 'object' || b.data === null) return false;
+  const entries = Object.entries(b.data);
+  if (!entries.every(([k, v]) => k.startsWith('baduk-') && typeof v === 'string')) return false;
+  for (const [, v] of entries) {
+    try {
+      JSON.parse(v);
+    } catch {
+      return false;
+    }
+  }
+  try {
+    for (const [k, v] of entries) localStorage.setItem(k, v);
+  } catch {
+    return false;
+  }
+  return true;
 }

@@ -1,5 +1,5 @@
 // 강의 진행 — 한 강의 단계를 차례로 보여주고, 누르기·고르기에 반응한다.
-import type { Game } from '../engine/rules';
+import { EMPTY, type Game, type IllegalReason } from '../engine/rules';
 import { chooseMove } from '../engine/ai/beginner';
 import { sfx } from '../audio';
 import { speak } from '../speech';
@@ -15,6 +15,8 @@ export class LessonPlayer {
   private placed: number[] = [];
   private freeGame: Game | null = null;
   private freeCount = 0;
+  /** move 단계에서 맞게 놓은 점 */
+  private moved: number | null = null;
   private busy = false;
   private timer: number | undefined;
   done = false;
@@ -44,6 +46,7 @@ export class LessonPlayer {
     this.placed = [];
     this.freeGame = this.step.kind === 'free' ? buildGame(this.step.setup) : null;
     this.freeCount = 0;
+    this.moved = null;
     this.busy = false;
     this.done = this.step.kind === 'explain';
     this.feedback = null;
@@ -112,6 +115,44 @@ export class LessonPlayer {
       this.rerender();
       return;
     }
+    if (s.kind === 'move') {
+      if (p == null) this.no('줄과 줄이 만나는 점을 눌러요');
+      else {
+        const c = this.r.game.check(p);
+        if (!c.ok) this.no(ILLEGAL[c.reason], p);
+        else if (!this.r.targets.includes(p)) this.no(s.wrong, p);
+        else {
+          const res = this.r.game.play(p); // 엔진이 둔 결과(잡힌 돌 들어내기)를 그대로 보여줌
+          this.moved = p;
+          sfx(res.ok && res.captured.length ? 'capture' : 'stone');
+          this.ok(s.done);
+        }
+      }
+      this.rerender();
+      return;
+    }
+    if (s.kind === 'find') {
+      if (p == null) this.no('줄과 줄이 만나는 점을 눌러요');
+      else if (this.found.has(p)) return;
+      else if (this.r.game.at(p) === EMPTY) this.no('백돌이 돌을 눌러요', p);
+      else {
+        const grp = this.r.groups.find((g) => g.includes(p));
+        if (!grp) this.no(s.wrong, p);
+        else {
+          grp.forEach((q) => this.found.add(q));
+          this.miss = null;
+          const left = this.r.groups.filter((g) => !g.some((q) => this.found.has(q))).length;
+          if (left === 0) this.ok(s.done);
+          else {
+            sfx('correct');
+            this.feedback = { text: `좋아요! ${left}개 남았어요`, ok: true };
+            speak(this.feedback.text);
+          }
+        }
+      }
+      this.rerender();
+      return;
+    }
     if (s.kind === 'free') {
       const g = this.freeGame!;
       if (this.done || this.busy || p == null) {
@@ -161,11 +202,14 @@ export class LessonPlayer {
     const l = this.lesson;
     const game = s.kind === 'free' ? this.freeGame! : this.placed.length ? buildGame(s.setup, this.placed) : this.r.game;
     const board = renderBoard(game, {
-      rings: s.kind === 'liberties' ? [] : this.r.rings.filter((p) => !this.found.has(p)),
-      goods: s.kind === 'liberties' ? [...this.found] : [],
+      rings:
+        s.kind === 'liberties' || (s.kind === 'move' && this.done)
+          ? []
+          : this.r.rings.filter((p) => !this.found.has(p)),
+      goods: s.kind === 'liberties' || s.kind === 'find' ? [...this.found] : [],
       crosses: (s.crosses ?? []).map(pt),
       miss: this.miss,
-      lastMove: s.kind === 'free' ? lastPlay(game) : null,
+      lastMove: s.kind === 'free' ? lastPlay(game) : s.kind === 'move' ? this.moved : null,
     });
     const dots = l.steps
       .map((_, i) => `<span class="dot ${i < this.stepIdx ? 'past' : i === this.stepIdx ? 'now' : ''}"></span>`)
@@ -203,6 +247,14 @@ export class LessonPlayer {
 </main>`;
   }
 }
+
+const ILLEGAL: Record<IllegalReason, string> = {
+  occupied: '벌써 돌이 있어요! 빈 점에 놓아요',
+  suicide: '거기는 숨구멍이 없어서 놓을 수 없어요(자살수)',
+  superko: '지금은 거기에 놓을 수 없어요',
+  'off-board': '줄과 줄이 만나는 점을 눌러요',
+  'game-over': '다음으로 넘어가요',
+};
 
 function lastPlay(g: Game): number | null {
   const m = g.moves[g.moves.length - 1];

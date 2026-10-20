@@ -22,6 +22,7 @@
 - `viewport-fit=cover` + `env(safe-area-inset-*)` 여백, 두 번 탭 확대 방지(`touch-action: manipulation`), 탭 강조색 제거, 시트·목록은 `overscroll-behavior: contain`, 높이는 `100dvh`.
 - 바둑판 위에서는 길게 누르기 메뉴·텍스트 선택을 막는다. 착수는 미리보기 → '착수' 확정.
 - 업데이트: 화면은 네트워크 우선(3초 제한) 후 저장본. 새 버전은 사용 중이 아닐 때 적용하고 **대국 중에는 절대 새로고침하지 않는다**.
+- 서비스워커 캐시: `public/sw.js`의 `VERSION`·`PRECACHE` 줄은 빌드 때 `vite.config.ts`가 자동으로 채운다(빌드 파일 전체를 설치 때 미리 저장, 캐시 이름도 자동 변경). 손으로 번호를 올리지 않는다.
 - 저장: `navigator.storage.persist()` 요청. 백업은 공유 시트(Web Share API)로 JSON·SGF 내보내기.
 
 ## 개발
@@ -39,4 +40,5 @@
 
 ## 강의·소리
 - 강의 데이터는 `src/lessons/data.ts`. 숨구멍 위치·개수, 다음 차례 같은 정답은 직접 쓰지 말고 엔진이 계산(`src/lessons/engine.ts`). `tests/lessons.test.ts`가 모든 단계를 엔진으로 검증.
+- 단계 종류: `explain`(설명) · `tap`(점 누르기) · `liberties`(숨구멍 찾기) · `choice`(고르기, 정답은 `libs`·`turn`·`legal`로 엔진 계산 가능) · `free`(백돌이와 번갈아 놓기) · `move`(흑돌 직접 놓기, `goal`: `capture` 잡기·`atari` 단수 만들기·`escape` 살리기 — 정답 점은 엔진이 판 전체를 시험해 찾음) · `find`(단수인 백돌이 돌 모두 찾기).
 - 효과음은 파일 없이 Web Audio로 합성(`src/audio.ts`), 읽어 주기는 기기 한국어 음성(`src/speech.ts`). 둘 다 설정에서 끌 수 있음(`baduk-settings`).

@@ -20,6 +20,9 @@ import {
   saveSettings,
   loadLessons,
   markLessonDone,
+  resetLessons,
+  exportBackup,
+  importBackup,
 } from './storage';
 import { icon } from './ui/icons';
 import { sfx, unlockAudio } from './audio';
@@ -32,12 +35,14 @@ import { LessonPlayer, rich } from './lessons/player';
 // 화면 이동은 아래 탭과 '← 뒤로' 버튼만.
 
 type Screen = 'home' | 'game' | 'learn' | 'puzzle' | 'record' | 'lesson';
-type Sheet = null | 'start' | 'rules' | 'resign' | 'result' | 'settings' | 'lesson-done';
+type Sheet = null | 'start' | 'rules' | 'resign' | 'result' | 'settings' | 'lesson-done' | 'reset-lessons';
 
 const ui = {
   screen: 'home' as Screen,
   sheet: null as Sheet,
   level: 1 as Level,
+  /** 따내기 바둑에서 먼저 잡아야 하는 돌 수 */
+  target: 1 as Target,
   game: null as Game | null,
   preview: null as number | null,
   hint: null as number | null,
@@ -74,6 +79,11 @@ const HINT_TEXT: Record<MoveReason, string> = {
   pass: '놓을 곳이 없어요',
 };
 
+type Target = 1 | 2 | 3;
+const TARGETS: Target[] = [1, 2, 3];
+/** 이 강까지 배우면 따내기 바둑 준비 끝(단수·잡기·도망가기) */
+const READY_LESSON = 6;
+
 const LEVELS: Record<Level, { name: string; stars: string }> = {
   1: { name: '쉬워요', stars: '★' },
   2: { name: '보통', stars: '★★' },
@@ -83,9 +93,10 @@ const LEVELS: Record<Level, { name: string; stars: string }> = {
 
 // ───────── 대국 진행 ─────────
 
-function newGame(level: Level) {
-  ui.game = new Game({ size: 9, mode: 'capture', captureTarget: 1 });
+function newGame(level: Level, target: Target) {
+  ui.game = new Game({ size: 9, mode: 'capture', captureTarget: target });
   ui.level = level;
+  ui.target = target;
   resetMarks();
   persist();
 }
@@ -107,6 +118,7 @@ function resumeGame(): boolean {
   }
   ui.game = g;
   ui.level = saved.level;
+  if (TARGETS.includes(saved.captureTarget as Target)) ui.target = saved.captureTarget as Target;
   resetMarks();
   return true;
 }
@@ -312,7 +324,7 @@ function homeHTML(): string {
       <div class="brand"><span class="wordmark">바둑한수</span><span class="seal" aria-hidden="true">手</span></div>
       <p class="sub">하루 한 수씩, 바둑이랑 놀아요</p>
     </div>
-    <button class="round-btn" data-action="settings" aria-label="소리 설정">${icon('gear')}</button>
+    <button class="round-btn" data-action="settings" aria-label="설정">${icon('gear')}</button>
   </header>
 
   ${learnCardHTML()}
@@ -325,7 +337,7 @@ function homeHTML(): string {
     </div>
     <div class="hero-text">
       <h2>백돌이와 따내기 바둑</h2>
-      <p>백돌이를 먼저 <b>1개</b> 잡으면 이겨요!</p>
+      <p>백돌이 돌을 먼저 <b>${ui.target}개</b> 잡으면 이겨요!</p>
     </div>
     <button class="btn primary big" data-action="open-start">${saved ? '이어서 하기' : '백돌이랑 놀기'} ${icon('arrow')}</button>
   </section>
@@ -399,7 +411,7 @@ function gameHTML(): string {
         <button data-action="hint" ${humanTurn ? '' : 'disabled'}><span class="tool-ic yellow">${icon('bulb')}</span>도와줘</button>
         <button data-action="undo" ${canUndo ? '' : 'disabled'}><span class="tool-ic sky">${icon('undo')}</span>되돌리기</button>
         <button data-action="rules"><span class="tool-ic mint">${icon('help')}</span>규칙</button>
-        <button data-action="ask-resign" ${g.isOver ? 'disabled' : ''}><span class="tool-ic pink">${icon('flag')}</span>그만하기</button>
+        <button data-action="ask-resign" ${humanTurn ? '' : 'disabled'}><span class="tool-ic pink">${icon('flag')}</span>그만하기</button>
       </nav>
     </div>
   </div>
@@ -492,6 +504,14 @@ function sheetHTML(): string {
         )
         .join('')}
     </div>
+    <p class="sheet-label">먼저 잡을 돌</p>
+    <div class="chips" role="radiogroup" aria-label="먼저 잡을 돌 수">
+      ${TARGETS.map(
+        (t) =>
+          `<button role="radio" aria-checked="${ui.target === t}" class="chip ${ui.target === t ? 'on' : ''}" data-action="target" data-target="${t}"><span class="chip-num">${t}개</span>${t === 1 ? '처음' : t === 2 ? '조금 더' : '길게'}</button>`,
+      ).join('')}
+    </div>
+    ${readyNudgeHTML()}
     <button class="btn ${saved ? 'ghost' : 'primary'} full big" data-action="start">새로 시작</button>
     <button class="btn text full" data-action="close-sheet">닫기</button>`;
   } else if (ui.sheet === 'rules') {
@@ -502,7 +522,7 @@ function sheetHTML(): string {
       <li><b>흑돌이(나)</b>와 <b>백돌이</b>가 번갈아 선이 만나는 곳에 돌을 놓아요.</li>
       <li>돌 옆 위·아래·왼쪽·오른쪽 빈 곳은 돌이 숨 쉬는 <b>숨구멍</b>이에요. <small>(바둑 말로 '활로')</small></li>
       <li>숨구멍을 모두 막으면 그 돌을 <b>잡아요!</b> 그림의 점선에 놓으면 백돌이를 잡아요.</li>
-      <li>먼저 <b>1개</b>를 잡으면 이겨요. 내 숨구멍이 하나 남으면 얼른 도망가요!</li>
+      <li>먼저 <b>${ui.game?.rules.captureTarget ?? ui.target}개</b>를 잡으면 이겨요. 내 숨구멍이 하나 남으면 얼른 도망가요!</li>
     </ol>
     <button class="btn primary full big" data-action="close-rules">알았어요!</button>`;
   } else if (ui.sheet === 'resign') {
@@ -510,11 +530,38 @@ function sheetHTML(): string {
     <div class="row2"><button class="btn primary" data-action="close-sheet">계속할래요</button><button class="btn ghost" data-action="resign">그만할래요</button></div>`;
   } else if (ui.sheet === 'settings') {
     const st = loadSettings();
-    body = `<h2>소리 설정</h2>
+    body = `<h2>설정</h2>
     <button class="toggle" data-action="toggle-sound" role="switch" aria-checked="${st.sound}"><span>${icon('play')}돌 놓는 소리·효과음</span><span class="sw ${st.sound ? 'on' : ''}"></span></button>
     <button class="toggle" data-action="toggle-voice" role="switch" aria-checked="${st.voice}"><span>${icon('speaker')}글 읽어 주기</span><span class="sw ${st.voice ? 'on' : ''}"></span></button>
+    <p class="sheet-label">읽어 주기 빠르기</p>
+    <div class="chips two" role="radiogroup" aria-label="읽어 주기 빠르기">
+      ${(
+        [
+          ['slow', '천천히'],
+          ['normal', '보통'],
+        ] as const
+      )
+        .map(
+          ([r, name]) =>
+            `<button role="radio" aria-checked="${st.rate === r}" class="chip ${st.rate === r ? 'on' : ''}" data-action="rate" data-rate="${r}">${name}</button>`,
+        )
+        .join('')}
+    </div>
     <p class="sheet-p small">소리가 안 나면 아이패드 옆 소리 크기 버튼을 올려 주세요.</p>
+    <details class="parent">
+      <summary>보호자용</summary>
+      <div class="parent-in">
+        <button class="btn ghost full" data-action="backup-export">기록 백업하기</button>
+        <button class="btn ghost full" data-action="backup-import">기록 불러오기</button>
+        <input type="file" id="backup-file" accept="application/json,.json" hidden />
+        <button class="btn ghost full" data-action="ask-reset-lessons">강의 처음부터 다시</button>
+        <p class="sheet-p small">백업 파일에는 강의 진도·전적·설정·하던 판이 들어 있어요. 다른 기기나 Safari에서 불러올 수 있어요.</p>
+      </div>
+    </details>
     <button class="btn primary full big" data-action="close-sheet">닫기</button>`;
+  } else if (ui.sheet === 'reset-lessons') {
+    body = `<h2>강의를 처음부터 할까요?</h2><p class="sheet-p">배운 강 표시가 모두 지워져요. 전적과 하던 판은 그대로예요.</p>
+    <div class="row2"><button class="btn primary" data-action="settings">아니요</button><button class="btn ghost" data-action="reset-lessons">처음부터</button></div>`;
   } else if (ui.sheet === 'lesson-done') {
     const l = ui.lesson!.lesson;
     const next = LESSONS[l.id];
@@ -532,9 +579,18 @@ function sheetHTML(): string {
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
     <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>`;
   }
-  const dismissable = ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings';
+  const dismissable = ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings' || ui.sheet === 'reset-lessons';
   return `<div class="sheet-backdrop" ${dismissable ? 'data-action="close-sheet"' : ''}></div>
   <div class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div>${body}</div>`;
+}
+
+/** 4~6강(단수·잡기·도망가기)을 아직 안 배웠으면 먼저 배우도록 살짝 안내(막지는 않음) */
+function readyNudgeHTML(): string {
+  const done = loadLessons().done;
+  if (done.includes(READY_LESSON) || READY_LESSON > LESSONS.length) return '';
+  const id = nextLessonId();
+  if (id == null) return '';
+  return `<div class="nudge">${icon('bulb')}<span>${READY_LESSON}강까지 배우면 돌 잡기가 더 쉬워져요!</span><button class="btn ghost" data-action="lesson-open" data-id="${id}">${id}강 배우기</button></div>`;
 }
 
 /** 받침에 따라 을/를 */
@@ -616,6 +672,29 @@ app.addEventListener('click', (ev) => {
       else stopSpeaking();
       break;
     }
+    case 'rate': {
+      const st = loadSettings();
+      st.rate = el.dataset.rate === 'slow' ? 'slow' : 'normal';
+      saveSettings(st);
+      speak('이 빠르기로 읽어 줄게요');
+      break;
+    }
+    case 'ask-reset-lessons':
+      ui.sheet = 'reset-lessons';
+      break;
+    case 'reset-lessons':
+      ui.lesson?.stop();
+      ui.lesson = null;
+      resetLessons();
+      ui.sheet = null;
+      showToast('강의를 처음부터 할 수 있어요');
+      return;
+    case 'backup-export':
+      void shareBackup();
+      return;
+    case 'backup-import':
+      (document.getElementById('backup-file') as HTMLInputElement | null)?.click();
+      return;
     case 'open-start':
       if (ui.screen === 'lesson') ui.screen = 'home';
       ui.sheet = 'start';
@@ -623,13 +702,16 @@ app.addEventListener('click', (ev) => {
     case 'level':
       ui.level = Number(el.dataset.level) as Level;
       break;
+    case 'target':
+      ui.target = Number(el.dataset.target) as Target;
+      break;
     case 'resume':
       if (resumeGame()) enterGame();
       else showToast('이어서 할 판을 찾지 못했어요');
       break;
     case 'start':
     case 'again':
-      newGame(ui.level);
+      newGame(ui.level, ui.target);
       enterGame();
       break;
     case 'close-sheet':
@@ -656,9 +738,9 @@ app.addEventListener('click', (ev) => {
       break;
     case 'resign':
       ui.sheet = null;
-      window.clearTimeout(aiTimer);
-      ui.aiThinking = false;
-      ui.game?.resign();
+      // 그만하기는 흑돌이 차례에만(백돌이 차례에 누르면 백돌이가 그만둔 것으로 처리되는 문제 방지)
+      if (!ui.game || ui.game.isOver || ui.aiThinking || ui.game.toMove !== HUMAN) break;
+      ui.game.resign();
       return finishGame();
     case 'exit-game':
       window.clearTimeout(aiTimer);
@@ -674,6 +756,48 @@ app.addEventListener('click', (ev) => {
       break;
   }
   render();
+});
+
+// ───────── 백업 ─────────
+
+async function shareBackup() {
+  const json = JSON.stringify(exportBackup(), null, 2);
+  const day = new Date().toISOString().slice(0, 10);
+  const name = `baduk-hansu-backup-${day}.json`;
+  const file = new File([json], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: '바둑한수 백업' });
+      return;
+    }
+  } catch (e) {
+    if ((e as DOMException)?.name === 'AbortError') return; // 공유 창을 닫음
+  }
+  // 공유 시트가 없으면 파일로 내려받기
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+app.addEventListener('change', (ev) => {
+  const input = ev.target as HTMLInputElement;
+  if (input.id !== 'backup-file' || !input.files?.[0]) return;
+  input.files[0]
+    .text()
+    .then((text) => {
+      if (!importBackup(text)) return showToast('백업 파일이 아니에요');
+      ui.game = null;
+      ui.lesson = null;
+      ui.sheet = null;
+      ui.screen = 'home';
+      showToast('기록을 불러왔어요');
+    })
+    .catch(() => showToast('파일을 읽지 못했어요'));
 });
 
 function enterGame() {

@@ -1,5 +1,5 @@
 // 강의 진행 — 한 강의 단계를 차례로 보여주고, 누르기·고르기에 반응한다.
-import { EMPTY, type Game, type IllegalReason } from '../engine/rules';
+import { EMPTY, WHITE, type Game, type IllegalReason } from '../engine/rules';
 import { chooseMove } from '../engine/ai/beginner';
 import { sfx } from '../audio';
 import { speak } from '../speech';
@@ -31,6 +31,11 @@ export class LessonPlayer {
     this.enter(0);
   }
 
+  /** 이 강의 바둑판 줄 수 */
+  get size(): number {
+    return this.lesson.size;
+  }
+
   get step(): Step {
     return this.lesson.steps[this.stepIdx];
   }
@@ -41,10 +46,10 @@ export class LessonPlayer {
   enter(i: number) {
     window.clearTimeout(this.timer);
     this.stepIdx = i;
-    this.r = resolve(this.step);
+    this.r = resolve(this.step, this.size);
     this.found = new Set();
     this.placed = [];
-    this.freeGame = this.step.kind === 'free' ? buildGame(this.step.setup) : null;
+    this.freeGame = this.step.kind === 'free' ? buildGame(this.step.setup, [], undefined, this.size) : null;
     this.freeCount = 0;
     this.moved = null;
     this.busy = false;
@@ -93,8 +98,12 @@ export class LessonPlayer {
   tapPoint(p: number | null) {
     const s = this.step;
     if (this.done && s.kind !== 'free') return;
-    if (s.kind === 'tap' || s.kind === 'liberties') {
-      if (p == null) return this.no('줄과 줄이 만나는 점을 눌러요');
+    if (s.kind === 'tap' || s.kind === 'liberties' || s.kind === 'territory') {
+      if (p == null) {
+        this.no('줄과 줄이 만나는 점을 눌러요');
+        this.rerender();
+        return;
+      }
       if (this.found.has(p)) return;
       if (this.r.targets.includes(p)) {
         this.found.add(p);
@@ -135,6 +144,7 @@ export class LessonPlayer {
       if (p == null) this.no('줄과 줄이 만나는 점을 눌러요');
       else if (this.found.has(p)) return;
       else if (this.r.game.at(p) === EMPTY) this.no('하양이 돌을 눌러요', p);
+      else if (this.r.game.at(p) !== WHITE) this.no('까망이 돌 말고 하양이 돌을 찾아요', p);
       else {
         const grp = this.r.groups.find((g) => g.includes(p));
         if (!grp) this.no(s.wrong, p);
@@ -200,13 +210,20 @@ export class LessonPlayer {
   html(): string {
     const s = this.step;
     const l = this.lesson;
-    const game = s.kind === 'free' ? this.freeGame! : this.placed.length ? buildGame(s.setup, this.placed) : this.r.game;
+    const game =
+      s.kind === 'free'
+        ? this.freeGame!
+        : this.placed.length
+          ? buildGame(s.setup, this.placed, undefined, this.size)
+          : this.r.game;
+    const showOwner = s.showOwner && (s.kind !== 'territory' || this.done);
     const board = renderBoard(game, {
+      owner: showOwner ? game.score().owner : null,
       rings:
-        s.kind === 'liberties' || (s.kind === 'move' && this.done)
+        s.kind === 'liberties' || s.kind === 'territory' || (s.kind === 'move' && this.done)
           ? []
           : this.r.rings.filter((p) => !this.found.has(p)),
-      goods: s.kind === 'liberties' || s.kind === 'find' ? [...this.found] : [],
+      goods: s.kind === 'liberties' || s.kind === 'find' || (s.kind === 'territory' && !this.done) ? [...this.found] : [],
       crosses: (s.crosses ?? []).map(pt),
       miss: this.miss,
       lastMove: s.kind === 'free' ? lastPlay(game) : s.kind === 'move' ? this.moved : null,

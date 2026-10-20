@@ -30,6 +30,8 @@ export function coord(size: number, i: number): number {
 }
 
 function starPoints(size: number): [number, number][] {
+  if (size === 5) return [[2, 2]];
+  if (size === 7) return [[2, 2], [4, 2], [3, 3], [2, 4], [4, 4]];
   if (size === 9) return [[2, 2], [6, 2], [4, 4], [2, 6], [6, 6]];
   if (size === 13) return [[3, 3], [9, 3], [6, 6], [3, 9], [9, 9]];
   if (size === 19) {
@@ -59,7 +61,8 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
       const [x, y] = toXY(size, p);
       const fill = view.owner[p] === BLACK ? '#1b1916' : '#f7f3ea';
       const stroke = view.owner[p] === BLACK ? 'none' : '#8a7a5c';
-      terr += `<rect x="${(coord(size, x) - 6).toFixed(1)}" y="${(coord(size, y) - 6).toFixed(1)}" width="12" height="12" rx="2" fill="${fill}" stroke="${stroke}" opacity="0.85"/>`;
+      const h = Math.max(6, st * 0.14); // 판이 작을수록 네모도 크게
+      terr += `<rect x="${(coord(size, x) - h).toFixed(1)}" y="${(coord(size, y) - h).toFixed(1)}" width="${(2 * h).toFixed(1)}" height="${(2 * h).toFixed(1)}" rx="2" fill="${fill}" stroke="${stroke}" opacity="0.85"/>`;
     }
   }
 

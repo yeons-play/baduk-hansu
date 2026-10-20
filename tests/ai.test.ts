@@ -82,6 +82,17 @@ describe('집 짓는 바둑 AI', () => {
     }
   });
 
+  it('AI끼리 13줄 바둑도 합법수만 두고 양쪽 패스로 끝나며, 한 수가 빠르다', () => {
+    for (let i = 0; i < 4; i++) {
+      const lv = [((i % 3) + 1) as Level, (((i + 1) % 3) + 1) as Level] as [Level, Level];
+      const t = performance.now();
+      const { g, n } = play(13, 900 + i, lv);
+      expect(g.isOver).toBe(true);
+      expect(g.result?.reason).toBe('score');
+      expect((performance.now() - t) / n).toBeLessThan(50); // 한 수 평균 50ms 미만
+    }
+  });
+
   it('끝난 판에 자기 눈을 메운 흔적이 없다(3단계끼리)', () => {
     const { g } = play(9, 777, [3, 3]);
     expect(g.isOver).toBe(true);

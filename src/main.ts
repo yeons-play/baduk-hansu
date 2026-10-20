@@ -57,6 +57,8 @@ const ui = {
   mode: 'capture' as GameMode,
   /** 따내기 바둑 판 크기 */
   size: 7 as BoardSize,
+  /** 진짜 바둑 판 크기 */
+  normalSize: 9 as NormalSize,
   game: null as Game | null,
   preview: null as number | null,
   hint: null as number | null,
@@ -98,8 +100,9 @@ type Target = 1 | 2 | 3;
 const TARGETS: Target[] = [1, 2, 3];
 type BoardSize = 5 | 7 | 9;
 const SIZES: BoardSize[] = [5, 7, 9];
-/** 진짜 바둑 판 크기 — 덤 7은 9줄 기준(docs/rules.md) */
-const NORMAL_SIZE = 9;
+/** 진짜 바둑 판 크기 — 덤은 두 판 모두 7(docs/rules.md) */
+type NormalSize = 9 | 13;
+const NORMAL_SIZES: NormalSize[] = [9, 13];
 /** 이 강까지 배우면 준비 끝: 따내기 바둑은 6강(단수·잡기·도망가기), 진짜 바둑은 12강 */
 const READY_LESSON: Record<GameMode, number> = { capture: 6, normal: 12 };
 
@@ -115,7 +118,7 @@ const LEVELS: Record<Level, { name: string; stars: string }> = {
 function newGame(level: Level, target: Target) {
   ui.game =
     ui.mode === 'normal'
-      ? new Game({ size: NORMAL_SIZE, mode: 'normal' })
+      ? new Game({ size: ui.normalSize, mode: 'normal' })
       : new Game({ size: ui.size, mode: 'capture', captureTarget: target });
   ui.level = level;
   ui.target = target;
@@ -142,6 +145,7 @@ function resumeGame(): boolean {
   ui.level = saved.level;
   ui.mode = saved.mode;
   if (saved.mode === 'capture' && SIZES.includes(saved.size as BoardSize)) ui.size = saved.size as BoardSize;
+  if (saved.mode === 'normal' && NORMAL_SIZES.includes(saved.size as NormalSize)) ui.normalSize = saved.size as NormalSize;
   if (TARGETS.includes(saved.captureTarget as Target)) ui.target = saved.captureTarget as Target;
   resetMarks();
   return true;
@@ -401,25 +405,22 @@ function homeHTML(): string {
 
   ${learnCardHTML()}
 
-  <section class="hero">
-    <div class="hero-friends" aria-hidden="true">
-      <span class="bob">${stoneFace('black', 96, 'happy')}</span>
-      <span class="vs">VS</span>
-      <span class="bob late">${stoneFace('white', 96, 'happy')}</span>
-    </div>
-    <div class="hero-text">
-      <h2>하양이와 따내기 바둑</h2>
-      <p>하양이 돌을 먼저 <b>${ui.target}개</b> 잡으면 이겨요!</p>
-    </div>
-    <button class="btn primary big" data-action="open-start" data-mode="capture">${saved?.mode === 'capture' ? '이어서 하기' : '하양이랑 놀기'} ${icon('arrow')}</button>
-  </section>
+  <div class="play-row">
+    <button class="play-card capture" data-action="open-start" data-mode="capture">
+      <span class="play-faces" aria-hidden="true"><span class="bob">${stoneFace('black', 64, 'happy')}</span><span class="bob late">${stoneFace('white', 64, 'happy')}</span></span>
+      <span class="play-title">따내기 바둑</span>
+      <span class="play-sub">하양이 돌을 먼저 <b>${ui.target}개</b> 잡으면 이겨요</span>
+      <span class="play-go">${saved?.mode === 'capture' ? '이어서 하기' : '놀기'} ${icon('arrow')}</span>
+    </button>
+    <button class="play-card normal" data-action="open-start" data-mode="normal">
+      <span class="play-faces" aria-hidden="true"><span class="play-house">${icon('house')}</span></span>
+      <span class="play-title">진짜 바둑</span>
+      <span class="play-sub">${saved?.mode === 'normal' ? `하던 ${saved.size}줄 판이 있어요` : '집을 더 많이 지으면 이겨요'}</span>
+      <span class="play-go">${saved?.mode === 'normal' ? '이어서 하기' : '놀기'} ${icon('arrow')}</span>
+    </button>
+  </div>
 
   <div class="grid2">
-    <button class="card wide" data-action="open-start" data-mode="normal">
-      <span class="card-ic yellow">${icon('house')}</span>
-      <span class="card-title">진짜 바둑 (집 짓기)</span>
-      <span class="card-sub">${saved?.mode === 'normal' ? '하던 판이 있어요 · 이어서 하기' : '9줄 바둑판 · 집을 더 많이 지으면 이겨요'}</span>
-    </button>
     <button class="card" data-action="tab" data-tab="learn">
       <span class="card-ic mint">${icon('book')}</span>
       <span class="card-title">강의 목록</span>
@@ -596,7 +597,16 @@ function sheetHTML(): string {
     </div>
     ${
       normal
-        ? `<p class="sheet-p small">9줄 바둑판 · 하양이는 나중에 두니까 덤 7점을 받아요. 다 두었으면 '넘기기'를 눌러요.</p>`
+        ? `<p class="sheet-label">바둑판 크기</p>
+    <div class="chips" role="radiogroup" aria-label="바둑판 크기">
+      ${NORMAL_SIZES.map(
+        (n) =>
+          `<button role="radio" aria-checked="${ui.normalSize === n}" class="chip ${ui.normalSize === n ? 'on' : ''}" data-action="normal-size" data-size="${n}"><span class="chip-num">${n}줄</span>${n === 9 ? '처음' : '크게'}</button>`,
+      ).join('')}
+    </div>
+    <p class="sheet-p small">${
+      ui.normalSize === 13 ? '13줄은 9줄보다 두 배쯤 오래 걸려요. ' : ''
+    }하양이는 나중에 두니까 덤 7점을 받아요. 다 두었으면 '넘기기'를 눌러요.</p>`
         : `<p class="sheet-label">바둑판 크기</p>
     <div class="chips" role="radiogroup" aria-label="바둑판 크기">
       ${SIZES.map(
@@ -837,6 +847,9 @@ app.addEventListener('click', (ev) => {
       break;
     case 'size':
       ui.size = Number(el.dataset.size) as BoardSize;
+      break;
+    case 'normal-size':
+      ui.normalSize = Number(el.dataset.size) === 13 ? 13 : 9;
       break;
     case 'ask-pass':
       ui.sheet = 'pass';

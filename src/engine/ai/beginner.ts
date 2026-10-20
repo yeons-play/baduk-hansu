@@ -2,7 +2,7 @@
 // 정규 대국에서는 판 전체의 집 모양(면적 계가 소유)을 보고 빈 곳을 넓히고, 자기 집·눈은 메우지 않으며,
 // 둘 만한 곳이 없으면 패스한다. 사석 판정을 하지 않는 규칙이므로 자기 집 안의 약한 상대 돌은 끝까지 쫓아 잡는다.
 // 합법 판단은 규칙 엔진(play/undo)에만 맡긴다.
-// 난이도: 1 = 실수가 잦음, 2 = 기본 공수, 3 = 한 수 앞의 위험까지 고려(힌트에도 사용)
+// 난이도: 1 = 초보다운 실수가 잦음, 2 = 가끔 실수, 3 = 한 수 앞의 위험까지 고려(힌트에도 사용)
 
 import { BLACK, EMPTY, WHITE, type Stone, Game, opponent, toXY } from '../rules';
 
@@ -20,10 +20,17 @@ export interface AIOptions {
   rand?: () => number;
 }
 
-const NOISE: Record<Level, number> = { 1: 45, 2: 16, 3: 0 };
+// 초보다운 실수만 한다: 아무 데나 두는 무작위 대신, 사람 초보가 실제로 하는 실수를 흉내 낸다.
+// (1) 비슷하게 좋은 수 여럿 중에서 고르기 — 점수 차가 MARGIN 안인 수만 후보라서 집 메우기·1선 같은 이상한 수는 나오지 않는다.
+// (2) 단수에 걸린 자기 돌을 못 보고 지나치기(OVERSIGHT). (3) 잡을 수 있는 돌을 못 보기(BLIND).
+// 아이가 하양이의 실수를 '혼내 줄 수 있게' 해서 강의에서 배운 것(단수·잡기·도망가기)을 실전에서 쓰게 한다.
+/** 가장 좋은 수와 이만큼 차이 나는 수까지 후보로 본다 */
+const MARGIN: Record<Level, number> = { 1: 8, 2: 4, 3: 0 };
 /** 단수에 걸린 자기 돌을 못 보고 지나칠 확률 */
-const OVERSIGHT: Record<Level, number> = { 1: 0.4, 2: 0.1, 3: 0 };
-/** 정규 대국: 가장 좋은 수의 점수가 이보다 낮으면 패스(잡음과 상관없이 판단) */
+const OVERSIGHT: Record<Level, number> = { 1: 0.5, 2: 0.15, 3: 0 };
+/** 잡을 수 있는 상대 돌을 못 볼 확률 */
+const BLIND: Record<Level, number> = { 1: 0.5, 2: 0.15, 3: 0 };
+/** 정규 대국: 가장 좋은 수의 점수가 이보다 낮으면 패스 */
 const PASS_BELOW = 4;
 
 export function chooseMove(game: Game, opts: AIOptions): AIChoice {
@@ -35,19 +42,21 @@ export function chooseMove(game: Game, opts: AIOptions): AIChoice {
 
   const myAtari = atariGroups(game, me);
   const oversight = rand() < OVERSIGHT[level];
+  const blind = rand() < BLIND[level];
   const owner = game.rules.mode === 'normal' ? settledOwner(game) : null;
   const infl = owner ? influence(game) : null;
 
-  let best: { point: number; score: number; reason: MoveReason } | null = null;
-  let bestRaw = -Infinity;
-  for (const p of legal) {
-    const { score, reason } = evaluate(game, p, me, myAtari, level, oversight, owner, infl);
-    if (score > bestRaw) bestRaw = score;
-    const noisy = score + (NOISE[level] ? (rand() - 0.5) * NOISE[level] : 0);
-    if (!best || noisy > best.score) best = { point: p, score: noisy, reason };
-  }
+  const all = legal.map((p) => ({ point: p, ...evaluate(game, p, me, myAtari, level, oversight, owner, infl) }));
+  const bestRaw = Math.max(...all.map((c) => c.score));
   if (owner && bestRaw < PASS_BELOW) return { point: null, reason: 'pass' };
-  return { point: best!.point, reason: best!.reason };
+
+  // 못 본 잡기는 후보에서 빠진다(다른 수가 하나도 없으면 그대로 둠)
+  let pool = blind ? all.filter((c) => c.reason !== 'capture' && c.reason !== 'win') : all;
+  if (pool.length === 0) pool = all;
+  const top = Math.max(...pool.map((c) => c.score));
+  const cands = pool.filter((c) => c.score >= top - MARGIN[level]);
+  const pick = cands[Math.floor(rand() * cands.length)] ?? cands[0];
+  return { point: pick.point, reason: pick.reason };
 }
 
 function evaluate(

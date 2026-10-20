@@ -20,6 +20,8 @@ import {
   saveSettings,
   loadLessons,
   markLessonDone,
+  loadPractice,
+  markPracticeDone,
   resetLessons,
   exportBackup,
   importBackup,
@@ -29,6 +31,7 @@ import { sfx, unlockAudio } from './audio';
 import { speak, stopSpeaking } from './speech';
 import { ALL_TITLES, LESSONS } from './lessons/data';
 import { LessonPlayer, rich } from './lessons/player';
+import { PRACTICE, COUNT, makePractice, type PracticeSet } from './lessons/practice';
 
 // ───────── 상태 ─────────
 // 아이폰·아이패드에서는 history API를 쓰지 않는다(홈 화면 앱 뒤로가기 꼬임 방지).
@@ -43,6 +46,7 @@ type Sheet =
   | 'result'
   | 'settings'
   | 'lesson-done'
+  | 'practice-done'
   | 'reset-lessons'
   | 'pass'
   | 'score';
@@ -376,7 +380,7 @@ function screenHTML(): string {
     case 'lesson':
       return ui.lesson ? ui.lesson.html() : learnHTML();
     case 'puzzle':
-      return placeholderHTML('문제 놀이', '돌 잡기 문제는 곧 열려요!');
+      return puzzleHTML();
     case 'record':
       return recordHTML();
   }
@@ -429,7 +433,7 @@ function homeHTML(): string {
     <button class="card" data-action="tab" data-tab="puzzle">
       <span class="card-ic sky">${icon('grid')}</span>
       <span class="card-title">문제 놀이</span>
-      <span class="card-sub">곧 열려요!</span>
+      <span class="card-sub">${practiceOpenCount() ? `연습 ${practiceOpenCount()}가지 열렸어요` : '4강을 배우면 열려요'}</span>
     </button>
   </div>
 
@@ -560,6 +564,44 @@ function recordHTML(): string {
 function placeholderHTML(title: string, body: string): string {
   return `<main class="screen"><header class="page-head"><h1>${title}</h1><p>${body}</p></header>
   <div class="soon" aria-hidden="true">${stoneFace('black', 120, 'think')}${stoneFace('white', 120, 'happy')}</div></main>`;
+}
+
+function practiceOpen(set: PracticeSet): boolean {
+  return loadLessons().done.includes(set.after);
+}
+
+function practiceOpenCount(): number {
+  return PRACTICE.filter(practiceOpen).length;
+}
+
+function puzzleHTML(): string {
+  const done = loadPractice().done;
+  const items = PRACTICE.map((set, i) => {
+    const open = practiceOpen(set);
+    const n = done[set.skill] ?? 0;
+    const tag = !open
+      ? `<span class="badge">${icon('lock')}${set.after}강 먼저</span>`
+      : n
+        ? `<span class="badge ok">${icon('check')}${n}번 했어요</span>`
+        : '<span class="badge go">풀기</span>';
+    const inner = `<span class="lnum">${set.skill === 'mix' ? '★' : set.after}</span><span class="ltitle">${set.title}<span class="term">${set.term}</span><small class="lgoal">${set.goal}</small></span>${tag}`;
+    return open
+      ? `<li><button class="lesson ${n ? 'fin' : ''}" data-action="practice-open" data-i="${i}">${inner}</button></li>`
+      : `<li><div class="lesson locked">${inner}</div></li>`;
+  }).join('');
+  return `<main class="screen">
+  <header class="page-head"><h1>문제 놀이</h1><p>강에서 배운 걸 여러 번 풀어 봐요. 한 번에 ${COUNT}문제, 할 때마다 새 문제가 나와요.</p></header>
+  <ol class="lessons">${items}</ol>
+</main>`;
+}
+
+function openPractice(i: number) {
+  const set = PRACTICE[i];
+  if (!set || !practiceOpen(set)) return;
+  ui.lesson?.stop();
+  ui.sheet = null;
+  ui.screen = 'lesson';
+  ui.lesson = new LessonPlayer(makePractice(set), render);
 }
 
 function tabbarHTML(): string {
@@ -707,14 +749,23 @@ function sheetHTML(): string {
   } else if (ui.sheet === 'lesson-done') {
     const l = ui.lesson!.lesson;
     const next = LESSONS[l.id];
+    const pi = PRACTICE.findIndex((p) => p.after === l.id && p.skill !== 'mix');
     body = `<div class="result-face">${starBurst()}${stoneFace('black', 120, 'wow')}</div>
     <h2 class="result-title">${l.id}강 끝!</h2>
     <p class="sheet-p center">${rich(`**${l.title}(${l.term})**${objJosa(l.title)} 다 배웠어요. 정말 잘했어요!`)}</p>
+    ${pi >= 0 ? `<button class="btn primary full big" data-action="practice-open" data-i="${pi}">${icon('grid')}연습 문제 ${COUNT}개 풀기</button><p class="sheet-p small center">여러 번 풀면 실전에서 금방 보여요!</p>` : ''}
     <div class="row2">${
       next
         ? `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="lesson-open" data-id="${next.id}">${next.id}강 하러 가기</button>`
         : `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="open-start" data-mode="normal">하양이랑 진짜 바둑</button>`
     }</div>`;
+  } else if (ui.sheet === 'practice-done') {
+    const l = ui.lesson!.lesson;
+    const i = PRACTICE.findIndex((p) => p.skill === l.practice);
+    body = `<div class="result-face">${starBurst()}${stoneFace('black', 120, 'wow')}</div>
+    <h2 class="result-title">${COUNT}문제 다 풀었어요!</h2>
+    <p class="sheet-p center">${rich(`**${l.title}(${l.term})** 연습 끝. 정말 잘했어요!`)}</p>
+    <div class="row2"><button class="btn ghost" data-action="tab" data-tab="puzzle">목록으로</button><button class="btn primary" data-action="practice-open" data-i="${i}">새 문제 더!</button></div>`;
   } else if (ui.sheet === 'result') {
     const r = ui.result;
     body = `<div class="result-face">${r.win ? starBurst() : ''}${stoneFace('black', 120, r.mood)}</div>
@@ -780,14 +831,21 @@ app.addEventListener('click', (ev) => {
       ui.lesson = new LessonPlayer(l, render);
       break;
     }
-    case 'lesson-next':
-      if (ui.lesson?.next()) {
-        markLessonDone(ui.lesson.lesson.id);
+    case 'lesson-next': {
+      const lp = ui.lesson;
+      if (!lp?.next()) break;
+      if (lp.lesson.practice) {
+        markPracticeDone(lp.lesson.practice);
+        ui.sheet = 'practice-done';
+        speak(`${COUNT}문제 다 풀었어요! 정말 잘했어요!`);
+      } else {
+        markLessonDone(lp.lesson.id);
         ui.sheet = 'lesson-done';
-        sfx('win');
-        speak(`${ui.lesson.lesson.id}강 끝! 정말 잘했어요!`);
+        speak(`${lp.lesson.id}강 끝! 정말 잘했어요!`);
       }
+      sfx('win');
       break;
+    }
     case 'lesson-choose':
       ui.lesson?.choose(Number(el.dataset.i));
       return;
@@ -797,7 +855,10 @@ app.addEventListener('click', (ev) => {
     case 'lesson-exit':
       ui.lesson?.stop();
       stopSpeaking();
-      ui.screen = 'learn';
+      ui.screen = ui.lesson?.lesson.practice ? 'puzzle' : 'learn';
+      break;
+    case 'practice-open':
+      openPractice(Number(el.dataset.i));
       break;
     case 'settings':
       ui.sheet = 'settings';

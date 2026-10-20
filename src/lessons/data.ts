@@ -89,6 +89,8 @@ export interface Lesson {
   /** 바둑판 줄 수(5·7·9) */
   size: number;
   steps: Step[];
+  /** 연습 문제 판이면 그 기술 이름(강의 진도에 넣지 않음) */
+  practice?: 'find' | 'capture' | 'escape' | 'mix';
 }
 
 export const STARS: XY[] = [

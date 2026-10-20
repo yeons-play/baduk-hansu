@@ -286,6 +286,25 @@ with sync_playwright() as pw:
       ok('진짜 바둑 시작 시트', '진짜 바둑' in p.locator('.sheet h2').inner_text() and p.locator('.sheet .nudge').count() == 0)
       p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(100)
 
+      # 홈의 두 놀이 카드는 같은 크기
+      cb = p.locator('.play-card.capture').bounding_box(); nb = p.locator('.play-card.normal').bounding_box()
+      ok('따내기·진짜 바둑 카드 크기가 같음', abs(cb['width'] - nb['width']) < 2 and abs(cb['height'] - nb['height']) < 2, (cb, nb))
+
+      # 진짜 바둑 13줄: 판 크기 고르기 → 13줄 판으로 시작
+      p.click('.play-card.normal'); p.wait_for_timeout(150)
+      ok('진짜 바둑 판 크기 9·13줄 고르기', p.locator('[data-action="normal-size"]').count() == 2)
+      p.click('[data-action="normal-size"][data-size="13"]'); p.wait_for_timeout(100)
+      p.click('[data-action="start"]'); p.wait_for_timeout(300)
+      if p.locator('[data-action="close-rules"]').count(): p.click('[data-action="close-rules"]'); p.wait_for_timeout(150)
+      ok('13줄 바둑판으로 시작', p.locator('.game .board-svg').get_attribute('aria-label') == '13줄 바둑판', p.locator('.game .board-svg').get_attribute('aria-label'))
+      tb = p.locator('.tools').bounding_box()
+      ok('13줄도 도구까지 한 화면', tb['y'] + tb['height'] <= p.evaluate('innerHeight') + 1)
+      shot(p, '17b-real-13')
+      tap_point(p, 6, 6, size=13); p.click('[data-action="confirm"]'); p.wait_for_timeout(1500)
+      ok('13줄에서 하양이가 둠', p.evaluate("JSON.parse(localStorage.getItem('baduk-current-game')).moves.length") >= 2)
+      p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
+      ok('홈에 하던 13줄 판 표시', '13줄' in p.locator('.play-card.normal').inner_text())
+
       # 진짜 바둑: 집 경계가 다 정해진 판을 이어서 두고, 넘기기 → 하양이도 넘김 → 집 세기 → 더 두기 → 끝내기
       moves = []
       for y in range(9):
@@ -293,8 +312,8 @@ with sync_playwright() as pw:
       p.evaluate("""m => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, mode: 'normal', size: 9, level: 3, captureTarget: 1, moves: m, savedAt: ''}))""", moves)
       p.evaluate("localStorage.setItem('baduk-seen-normal-rules', 'true')")
       p.reload(); p.wait_for_timeout(400)
-      ok('홈에 진짜 바둑 카드(하던 판 표시)', '하던 판' in p.locator('.card.wide').inner_text())
-      p.click('.card.wide'); p.wait_for_timeout(150)
+      ok('홈에 진짜 바둑 카드(하던 판 표시)', '하던' in p.locator('.play-card.normal').inner_text())
+      p.click('.play-card.normal'); p.wait_for_timeout(150)
       p.click('[data-action="resume"]'); p.wait_for_timeout(300)
       ok('진짜 바둑 화면(넘기기 버튼 포함 도구 5개)', '진짜 바둑' in p.locator('.bar h1').inner_text() and p.locator('.tools button').count() == 5)
       vh = p.evaluate('innerHeight')

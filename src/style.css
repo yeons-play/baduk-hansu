@@ -97,26 +97,33 @@ b { font-weight: 700; }
 .seal { width: 1.6rem; height: 1.6rem; border-radius: 8px; background: var(--primary); color: #fff; font-family: var(--title); font-size: 1rem; display: grid; place-items: center; transform: rotate(-6deg); }
 .sub { font-size: 1.05rem; color: var(--sub); }
 
-.hero {
-  background: linear-gradient(160deg, #FFE3A3 0%, #FFD089 100%);
+.play-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.play-card {
   border-radius: var(--r-lg);
-  padding: 26px 24px 24px;
+  padding: 20px 16px 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   text-align: center;
-  box-shadow: 0 10px 0 #F2BC6B, 0 18px 30px rgba(180, 120, 40, 0.18);
 }
-.hero-friends { display: flex; align-items: center; gap: 18px; }
-.hero-friends .face { width: clamp(84px, 16vw, 130px); height: auto; }
-.vs { font-family: var(--title); font-size: 1.3rem; color: #B27A2A; }
+.play-card.capture { background: linear-gradient(160deg, #FFE3A3 0%, #FFD089 100%); box-shadow: 0 8px 0 #F2BC6B, 0 14px 24px rgba(180, 120, 40, 0.16); }
+.play-card.normal { background: linear-gradient(160deg, #E4F0FF 0%, #CFE2FF 100%); box-shadow: 0 8px 0 #A9C6F0, 0 14px 24px rgba(53, 103, 181, 0.14); }
+.play-card:active { transform: translateY(4px); }
+.play-faces { height: clamp(64px, 12vw, 96px); display: flex; align-items: center; gap: 6px; }
+.play-faces .face { width: clamp(52px, 11vw, 84px); height: auto; }
+.play-house { width: clamp(64px, 12vw, 96px); height: clamp(64px, 12vw, 96px); border-radius: 50%; background: #FFFFFF; color: var(--sky-ink); display: grid; place-items: center; box-shadow: 0 4px 0 #A9C6F0; }
+.play-house svg { width: 55%; height: 55%; }
+.play-title { font-family: var(--title); font-size: clamp(1.35rem, 3.6vw, 1.8rem); }
+.play-sub { font-size: 1rem; color: #5E4A2E; flex: 1; }
+.play-card.normal .play-sub { color: #33507A; }
+.play-go { margin-top: 4px; width: 100%; min-height: 56px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: var(--title); font-size: 1.2rem; color: #FFFFFF; }
+.play-card.capture .play-go { background: var(--primary); box-shadow: 0 5px 0 var(--primary-press); }
+.play-card.normal .play-go { background: var(--sky-ink); box-shadow: 0 5px 0 #24497F; }
 .bob { display: inline-block; animation: bob 2.4s ease-in-out infinite; }
 .bob.late { animation-delay: 0.6s; }
 @keyframes bob { 50% { transform: translateY(-8px); } }
-.hero-text h2 { font-family: var(--title); font-size: 1.7rem; font-weight: 400; }
-.hero-text p { font-size: 1.1rem; color: #6A4A1E; }
-.hero .btn { width: min(100%, 420px); }
+@media (prefers-reduced-motion: reduce) { .bob { animation: none; } }
 
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .card { background: var(--card); border: 2px solid var(--line); border-radius: var(--r-md); padding: 18px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; box-shadow: 0 4px 0 var(--line); }
@@ -339,14 +346,6 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .parent-in { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; }
 
 /* 진짜 바둑(집 짓기) */
-.card.wide { grid-column: span 2; flex-direction: row; align-items: center; gap: 14px; }
-.card.wide .card-ic { margin-bottom: 0; flex: none; }
-.card.wide .card-title { flex: none; }
-.card.wide .card-sub { flex: 1; text-align: right; }
-@media (max-width: 520px) {
-  .card.wide { flex-wrap: wrap; }
-  .card.wide .card-sub { flex-basis: 100%; text-align: left; }
-}
 .card-ic.yellow { background: var(--yellow); color: var(--yellow-ink); }
 .tools.five { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .tools.five button { font-size: 0.95rem; }

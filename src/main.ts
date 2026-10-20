@@ -3,8 +3,9 @@ import '@fontsource/jua/latin-400.css';
 import '@fontsource/gowun-dodum/korean-400.css';
 import '@fontsource/gowun-dodum/latin-400.css';
 import './style.css';
-import { BLACK, WHITE, Game, type GameMode, type IllegalReason } from './engine/rules';
+import { BLACK, EMPTY, WHITE, Game, type GameMode, type IllegalReason } from './engine/rules';
 import { chooseMove, type Level, type MoveReason } from './engine/ai/beginner';
+import { estimateDead, countDead } from './engine/ai/dead';
 import { pointFromEvent, renderBoard } from './ui/board';
 import { type Mood, starBurst, stoneFace } from './ui/faces';
 import {
@@ -71,6 +72,8 @@ const ui = {
   toast: null as string | null,
   result: { title: '', body: '', mood: 'happy' as Mood, win: false },
   lesson: null as LessonPlayer | null,
+  /** 집 세기 화면에서 들어낼 죽은 돌(앱이 짐작, 눌러서 고침) */
+  dead: [] as number[],
 };
 
 const HUMAN = BLACK;
@@ -243,7 +246,9 @@ function endOrScore() {
   if (g.result?.reason === 'score') {
     ui.sheet = 'score';
     resetMarks();
-    const s = g.result.score;
+    ui.dead = estimateDead(g);
+    const r = g.settle(ui.dead);
+    const s = r && r.reason === 'score' ? r.score : g.result.score;
     speak(
       `까망이는 ${s.blackTotal}점, 하양이는 덤까지 ${s.whiteTotal}점이에요. ${
         s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요.' : '똑같아요!'
@@ -255,6 +260,18 @@ function endOrScore() {
   finishGame();
 }
 
+/** 집 세기 화면에서 돌을 누르면 그 무리를 죽은 돌 ↔ 산 돌로 바꾼다 */
+function toggleDead(p: number | null) {
+  const g = ui.game;
+  if (!g || p == null || g.at(p) === EMPTY) return;
+  const grp = g.group(p).stones;
+  const isDead = ui.dead.includes(p);
+  ui.dead = isDead ? ui.dead.filter((q) => !grp.includes(q)) : [...ui.dead, ...grp];
+  g.settle(ui.dead);
+  sfx('stone');
+  render();
+}
+
 /** 집 세기 화면에서 '더 둘래요': 넘기기를 되돌려 다시 까망이 차례로 */
 function resumeAfterScore() {
   const g = ui.game;
@@ -263,6 +280,7 @@ function resumeAfterScore() {
     g.undo();
   } while (g.moves.length && g.toMove !== HUMAN);
   ui.sheet = null;
+  ui.dead = [];
   resetMarks();
   persist();
   render();
@@ -677,7 +695,7 @@ function sheetHTML(): string {
       <li>내 돌로 둘러싼 빈 곳이 <b>내 집</b>이에요. 그림의 네모가 집이에요.</li>
       <li>처음에는 <b>귀(모서리) → 변(가장자리) → 가운데</b> 순서로 두면 집 짓기가 쉬워요.</li>
       <li>더 놓을 곳이 없으면 <b>넘기기</b>를 눌러요. 둘 다 넘기면 앱이 세어 줘요.</li>
-      <li>내 집 안의 하양이 돌은 끝나기 전에 <b>꼭 잡아요!</b> 판 위에 남은 돌은 다 살아 있는 돌로 세요.</li>
+      <li>둘 다 넘기면 앱이 <b>죽은 돌</b>(살 수 없는 돌)을 흐리게 보여 주고 빼고 세요. 틀렸으면 그 돌을 눌러 고쳐요.</li>
       <li>돌 + 집이 더 많으면 이겨요. 하양이는 <b>덤 7점</b>을 더 받아요.</li>
     </ol>
     <button class="btn primary full big" data-action="close-rules">알았어요!</button>`;
@@ -688,8 +706,14 @@ function sheetHTML(): string {
     const g = ui.game;
     const s = ui.game.result.score;
     const verdict = s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요' : '똑같아요! 비겼어요';
+    const dc = countDead(g, ui.dead);
     body = `<h2>집을 세어 봐요</h2>
-    <div class="rules-board score-board">${renderBoard(g, { owner: s.owner })}</div>
+    <div class="rules-board score-board">${renderBoard(g, { owner: s.owner, dead: ui.dead })}</div>
+    <p class="sheet-p small center">${
+      ui.dead.length
+        ? `흐린 돌은 <b>죽은 돌(사석)</b>이라 빼고 세요 · 까망이 ${dc.black}개, 하양이 ${dc.white}개`
+        : '죽은 돌(사석)이 없어요'
+    }<br>틀렸으면 바둑판의 돌을 눌러 바꿔요.</p>
     <table class="score-table">
       <thead><tr><th></th><th>돌</th><th>집</th><th>덤</th><th>합계</th></tr></thead>
       <tbody>
@@ -698,7 +722,7 @@ function sheetHTML(): string {
       </tbody>
     </table>
     <p class="sheet-p center"><b>${verdict}</b></p>
-    <p class="sheet-p small center">집 안에 잡지 않은 돌이 남아 있으면 '더 둘래요'를 눌러 마저 잡아요.</p>
+    <p class="sheet-p small center">아직 싸우는 중인 돌이 있으면 '더 둘래요'를 눌러 마저 둬요.</p>
     <div class="row2"><button class="btn ghost" data-action="resume-play">더 둘래요</button><button class="btn primary" data-action="finish-score">끝낼래요</button></div>`;
   } else if (ui.sheet === 'rules') {
     const g = Game.fromDiagram(['. . . . .', '. . X . .', '. X O X .', '. . . . .', '. . . . .'], BLACK);
@@ -805,6 +829,11 @@ function esc(s: string): string {
 
 app.addEventListener('click', (ev) => {
   const target = ev.target as Element;
+  const ssvg = target.closest('.score-board .board-svg') as SVGSVGElement | null;
+  if (ssvg && ui.sheet === 'score' && ui.game) {
+    toggleDead(pointFromEvent(ssvg, ui.game.size, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));
+    return;
+  }
   const lsvg = target.closest('.lesson-screen .board-svg') as SVGSVGElement | null;
   if (lsvg && ui.lesson && !ui.sheet) {
     ui.lesson.tapPoint(pointFromEvent(lsvg, ui.lesson.size, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));

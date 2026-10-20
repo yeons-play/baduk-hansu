@@ -16,6 +16,8 @@ export interface BoardView {
   crosses?: number[];
   /** 방금 틀리게 누른 점 */
   miss?: number | null;
+  /** 죽은 돌(계가에서 들어낼 돌): 흐리게 + 엑스 표시 */
+  dead?: number[];
 }
 
 const VB = 400;
@@ -57,7 +59,7 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
   let terr = '';
   if (view.owner) {
     for (let p = 0; p < game.geo.n; p++) {
-      if (game.at(p) !== EMPTY || !view.owner[p]) continue;
+      if ((game.at(p) !== EMPTY && !(view.dead ?? []).includes(p)) || !view.owner[p]) continue;
       const [x, y] = toXY(size, p);
       const fill = view.owner[p] === BLACK ? '#1b1916' : '#f7f3ea';
       const stroke = view.owner[p] === BLACK ? 'none' : '#8a7a5c';
@@ -67,12 +69,20 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
   }
 
   let stones = '';
+  const dead = new Set(view.dead ?? []);
   for (let p = 0; p < game.geo.n; p++) {
     const v = game.at(p);
     if (v === EMPTY) continue;
     const [x, y] = toXY(size, p);
     const cx = coord(size, x);
     const cy = coord(size, y);
+    if (dead.has(p)) {
+      // 죽은 돌: 그림자 없이 흐리게, 위에 엑스
+      const d = r * 0.45;
+      stones += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${v === BLACK ? 'gb' : 'gw'})" opacity="0.38"/>`;
+      stones += `<path d="M${(cx - d).toFixed(1)} ${(cy - d).toFixed(1)}l${(2 * d).toFixed(1)} ${(2 * d).toFixed(1)}M${(cx + d).toFixed(1)} ${(cy - d).toFixed(1)}l${(-2 * d).toFixed(1)} ${(2 * d).toFixed(1)}" stroke="#B83E57" stroke-width="3" stroke-linecap="round"/>`;
+      continue;
+    }
     stones += `<circle cx="${(cx + 1.6).toFixed(1)}" cy="${(cy + 2.4).toFixed(1)}" r="${(r - 0.5).toFixed(1)}" fill="#000" opacity="0.28" filter="url(#soft)"/>`;
     stones += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${v === BLACK ? 'gb' : 'gw'})"/>`;
   }

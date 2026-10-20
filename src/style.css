@@ -323,3 +323,17 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .sw.on::after { transform: translateX(1.4rem); }
 .sheet-p.small { font-size: 0.95rem; color: var(--sub); }
 @media (prefers-reduced-motion: reduce) { .choice.wrong, .miss { animation: none; } }
+
+/* 따내기 바둑 시작: 4~6강 먼저 배우기 안내 */
+.nudge { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: var(--yellow); color: #6A4A00; font-size: 1rem; }
+.nudge .ic { color: var(--yellow-ink); width: 1.4em; height: 1.4em; flex: none; }
+.nudge span { flex: 1; }
+.nudge .btn { flex: none; min-height: 48px; padding: 0 14px; font-size: 1rem; }
+.chip .chip-num { color: var(--ink); font-size: 1.35rem; }
+.chip.on .chip-num { color: var(--primary); }
+
+/* 설정: 읽기 빠르기, 보호자용 */
+.chips.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.parent { border: 2px solid var(--line); border-radius: var(--r-md); padding: 0 16px; }
+.parent summary { min-height: 3.4rem; display: flex; align-items: center; font-family: var(--title); font-size: 1.1rem; color: var(--sub); cursor: pointer; }
+.parent-in { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; }

@@ -147,14 +147,4 @@ function nearStone(game: Game, x: number, y: number, d: number): boolean {
   }
   return false;
 }
-
-/** 초보자용 힌트 문구 */
-export const REASON_TEXT: Record<MoveReason, string> = {
-  win: '여기에 두면 상대 돌을 따내서 이겨요',
-  capture: '여기에 두면 상대 돌을 따낼 수 있어요',
-  escape: '내 돌이 단수예요. 여기로 달아나면 활로가 늘어나요',
-  atari: '여기에 두면 상대 돌을 단수로 몰 수 있어요',
-  connect: '돌을 이어 두면 활로가 많아져 안전해요',
-  shape: '다른 돌 가까이에 두면서 활로를 넉넉히 지켜요',
-  pass: '둘 곳이 없어요',
-};
+// 힌트 문구는 화면 쪽(src/main.ts의 HINT_TEXT)에서 7살 말투로 관리한다.

@@ -1,9 +1,13 @@
 // 바둑한수 서비스워커 (https://yeons-play.github.io/baduk-hansu/)
 // - 화면(index.html): 네트워크 우선, 3초 안에 응답이 없거나 오프라인이면 저장본
 // - 빌드 파일(assets/, icons/): 저장본 우선, 처음 받을 때 저장
+// - 설치할 때 빌드 파일(화면 코드·글꼴·아이콘)을 모두 미리 저장 → 처음 연 날부터 인터넷 없이 동작
 // - 새 버전은 바로 적용하되 열려 있는 화면을 강제로 새로고침하지 않음 → 대국 중 끊김 없음
 // - 캐시 저장소는 같은 주소의 다른 앱과 공유되므로, 지울 때는 반드시 baduk- 접두어만
-const CACHE_NAME = 'baduk-v3'; // 2026-10-19 1~3강·효과음·읽어 주기
+// VERSION·PRECACHE 두 줄은 빌드할 때 vite.config.ts가 자동으로 채운다(손으로 고치지 않음).
+const VERSION = 'dev';
+const PRECACHE = [];
+const CACHE_NAME = 'baduk-' + VERSION;
 const MINE = (k) => k.startsWith('baduk-');
 const SCOPE = new URL(self.registration.scope).pathname;
 const PAGE = SCOPE + 'index.html';
@@ -11,7 +15,11 @@ const TIMEOUT_MS = 3000;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((c) => Promise.allSettled([c.add(SCOPE), c.add(SCOPE + 'manifest.webmanifest')])),
+    caches
+      .open(CACHE_NAME)
+      .then((c) =>
+        Promise.allSettled([c.add(SCOPE), c.add(SCOPE + 'manifest.webmanifest'), ...PRECACHE.map((f) => c.add(SCOPE + f))]),
+      ),
   );
   self.skipWaiting();
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { EMPTY } from '../src/engine/rules';
 import { LESSONS } from '../src/lessons/data';
 import { fill, pt, resolve } from '../src/lessons/engine';
+import type { XY } from '../src/lessons/data';
 import { toSpeech } from '../src/speech';
 
 describe('기초 강의 데이터', () => {
@@ -39,6 +40,20 @@ describe('기초 강의 데이터', () => {
             expect(r.answer).toBeGreaterThanOrEqual(0);
             expect(r.answer).toBeLessThan(step.options.length);
           }
+          if (step.kind === 'move') {
+            // 맞는 수가 있어야 하고, 모두 실제로 둘 수 있는 빈 점
+            expect(r.targets.length).toBeGreaterThan(0);
+            for (const p of r.targets) {
+              expect(r.game.at(p)).toBe(EMPTY);
+              expect(r.game.isLegal(p)).toBe(true);
+            }
+            if (step.goal === 'escape') expect(step.libsOf).toBeDefined();
+          }
+          if (step.kind === 'find') {
+            expect(r.groups.length).toBeGreaterThan(0);
+            for (const g of r.groups) expect(r.game.group(g[0]).liberties.length).toBe(1);
+          }
+          if (step.probe) expect(r.game.at(pt(step.probe))).toBe(EMPTY);
           for (const xy of step.crosses ?? []) expect(r.game.at(pt(xy))).toBe(EMPTY);
         });
       });
@@ -52,6 +67,34 @@ describe('기초 강의 데이터', () => {
     expect(resolve(l3[4]).libs).toBe(2);
     expect(resolve(l3[5]).libs).toBe(3);
     expect(resolve(l3[6]).libs).toBe(6);
+  });
+
+  const sorted = (xs: XY[]) => xs.map(pt).sort((a, b) => a - b);
+  const targetsOf = (lesson: number, step: number) => [...resolve(LESSONS[lesson - 1].steps[step]).targets].sort((a, b) => a - b);
+
+  it('4강: 단수 숨구멍 1개, 단수 찾기 2무리, 단수 만들기는 남은 두 숨구멍', () => {
+    const l4 = LESSONS[3].steps;
+    expect(resolve(l4[0]).libs).toBe(1);
+    expect(resolve(l4[2]).libs).toBe(1);
+    expect(resolve(l4[3]).groups.length).toBe(2);
+    expect(targetsOf(4, 4)).toEqual(sorted([[5, 4], [4, 5]]));
+    expect(resolve(l4[5]).libs).toBe(1);
+  });
+
+  it('5강: 잡는 점은 마지막 숨구멍 하나뿐, 자살수는 못 두고 잡는 수는 둘 수 있다', () => {
+    expect(targetsOf(5, 1)).toEqual(sorted([[4, 5]]));
+    expect(targetsOf(5, 2)).toEqual(sorted([[0, 1]]));
+    expect(targetsOf(5, 3)).toEqual(sorted([[6, 4]]));
+    expect(resolve(LESSONS[4].steps[5]).answer).toBe(1); // 놓을 수 없어요
+    expect(resolve(LESSONS[4].steps[6]).answer).toBe(0); // 놓을 수 있어요(잡으니까)
+  });
+
+  it('6강: 도망가기, 잡아서 살리기, 계단 쫓기(축)는 숨구멍 1개', () => {
+    expect(resolve(LESSONS[5].steps[0]).libs).toBe(1);
+    expect(targetsOf(6, 1)).toEqual(sorted([[4, 5]]));
+    expect(resolve(LESSONS[5].steps[2]).libs).toBe(3);
+    expect(targetsOf(6, 3)).toEqual(sorted([[4, 2], [4, 5]])); // 늘기 + 잡아서 살리기
+    expect(resolve(LESSONS[5].steps[4]).libs).toBe(1);
   });
 
   it('2강 "다음 차례" 정답은 백돌이', () => {

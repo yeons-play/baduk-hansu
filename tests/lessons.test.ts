@@ -97,7 +97,7 @@ describe('기초 강의 데이터', () => {
     expect(resolve(LESSONS[5].steps[4]).libs).toBe(1);
   });
 
-  it('2강 "다음 차례" 정답은 백돌이', () => {
+  it('2강 "다음 차례" 정답은 하양이', () => {
     expect(resolve(LESSONS[1].steps[3]).answer).toBe(1);
   });
 });

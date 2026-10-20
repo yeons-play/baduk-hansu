@@ -242,6 +242,17 @@ export class Game {
     return this.play(toPoint(this.size, x, y));
   }
 
+  /**
+   * 양쪽이 넘겨 끝난 정규 대국의 결과를 죽은 돌을 들어낸 계가로 다시 정한다.
+   * 판은 바꾸지 않는다(되돌려 더 둘 수 있게). 끝난 계가 대국이 아니면 아무것도 하지 않음.
+   */
+  settle(dead: Iterable<number>): GameResult | null {
+    if (this._result?.reason !== 'score') return this._result;
+    const score = this.score(dead);
+    this._result = { winner: score.margin > 0 ? BLACK : score.margin < 0 ? WHITE : null, reason: 'score', score };
+    return this._result;
+  }
+
   pass(): MoveResult {
     if (this._result) return { ok: false, reason: 'game-over' };
     const color = this._toMove;
@@ -292,9 +303,18 @@ export class Game {
   // ───────── 계가 ─────────
 
   /** 면적 계가. 판 위의 돌은 모두 산 돌로 센다. */
-  score(): AreaScore {
+  /**
+   * 면적 계가. dead에 준 점의 돌은 '죽은 돌'로 보고 들어낸 뒤 센다(그 자리는 빈 곳 → 둘러싼 쪽 집).
+   * 죽은 돌 판정은 규칙이 아니라 합의라서 밖에서 정해 넘긴다(앱이 짐작 → 사람이 고침).
+   */
+  score(dead: Iterable<number> = []): AreaScore {
     const { n, neighbors } = this.geo;
-    const b = this._board;
+    let b = this._board;
+    const deadList = [...dead].filter((p) => p >= 0 && p < n && b[p] !== EMPTY);
+    if (deadList.length) {
+      b = b.slice();
+      for (const p of deadList) b[p] = EMPTY;
+    }
     const owner = new Uint8Array(n);
     let blackStones = 0;
     let whiteStones = 0;

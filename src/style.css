@@ -240,7 +240,7 @@ b { font-weight: 700; }
 .rules { margin: 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 10px; font-size: 1.15rem; color: #4E4036; }
 .rules b { color: var(--ink); }
 .rules small { color: var(--sub); font-size: 0.85em; }
-.rules-board { width: min(220px, 50%); align-self: center; border-radius: 12px; overflow: hidden; box-shadow: 0 5px 0 #B98A45; }
+.rules-board { flex: none; aspect-ratio: 1; width: min(220px, 50%); align-self: center; border-radius: 12px; overflow: hidden; box-shadow: 0 5px 0 #B98A45; }
 .rules-board svg { width: 100%; display: block; }
 .result-face { position: relative; align-self: center; display: grid; place-items: center; animation: pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
 .result-title { font-size: 2.2rem !important; color: var(--primary); }
@@ -355,7 +355,7 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .score-table thead th { font-family: var(--title); color: var(--sub); font-weight: normal; }
 .score-table tbody th { font-family: var(--title); text-align: left; }
 .score-table b { font-size: 1.3rem; color: var(--primary); }
-.rules-board.score-board { width: min(320px, 72%); }
+.rules-board.score-board { width: min(440px, 88%, 44dvh); cursor: pointer; }
 .back { white-space: nowrap; }
 @media (max-width: 500px) {
   .bar .pill .pill-name { display: none; } /* 좁은 화면은 별만 */

@@ -58,3 +58,79 @@ describe('초급 AI', () => {
     }
   });
 });
+
+describe('집 짓는 바둑 AI', () => {
+  const play = (size: number, seed: number, levels: [Level, Level]) => {
+    const rand = rng(seed);
+    const g = new Game({ size, mode: 'normal' });
+    let n = 0;
+    while (!g.isOver && n < size * size * 4) {
+      const c = chooseMove(g, { level: levels[n % 2], rand });
+      if (c.point === null) g.pass();
+      else expect(g.play(c.point).ok).toBe(true);
+      n++;
+    }
+    return { g, n };
+  };
+
+  it('AI끼리 9줄 바둑을 두면 합법수만 두고 양쪽 패스로 끝난다', () => {
+    for (let i = 0; i < 12; i++) {
+      const lv = [((i % 3) + 1) as Level, (((i + 1) % 3) + 1) as Level] as [Level, Level];
+      const { g } = play(9, 500 + i, lv);
+      expect(g.isOver).toBe(true);
+      expect(g.result?.reason).toBe('score');
+    }
+  });
+
+  it('끝난 판에 자기 눈을 메운 흔적이 없다(3단계끼리)', () => {
+    const { g } = play(9, 777, [3, 3]);
+    expect(g.isOver).toBe(true);
+    // 양쪽 모두 판 위에 돌이 남아 있어야 함(스스로 다 메워 죽지 않음)
+    const s = g.score();
+    expect(s.blackStones).toBeGreaterThan(5);
+    expect(s.whiteStones).toBeGreaterThan(5);
+  });
+
+  it('자기 집 안의 약한 상대 돌은 패스하기 전에 잡는다', () => {
+    // 백 집 안(오른쪽)에 흑 한 점, 백 차례
+    const g = Game.fromDiagram(
+      [
+        '. . . . . X O . .',
+        '. . . . . X O . .',
+        '. . . . . X O . .',
+        '. . . . . X O . .',
+        '. . . . . X O X .',
+        '. . . . . X O . .',
+        '. . . . . X O . .',
+        '. . . . . X O . .',
+        '. . . . . X O . .',
+      ],
+      WHITE,
+    );
+    const c = chooseMove(g, { level: 3, rand: rng(3) });
+    expect(c.point).not.toBeNull();
+    // 백이 패스하지 않고 흑 돌 옆에서 쫓는다
+    const near = [toPoint(9, 7, 3), toPoint(9, 7, 5), toPoint(9, 8, 4)];
+    expect(near).toContain(c.point);
+  });
+
+  it('둘 곳이 없는 판에서는 패스한다', () => {
+    const g = Game.fromDiagram(
+      [
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+        '. . . X O . . . .',
+      ],
+      WHITE,
+    );
+    expect(chooseMove(g, { level: 3, rand: rng(4) }).point).toBeNull();
+    g.pass();
+    expect(chooseMove(g, { level: 2, rand: rng(5) }).point).toBeNull();
+  });
+});

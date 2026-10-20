@@ -67,8 +67,12 @@ export function recordResult(outcome: 'win' | 'loss' | 'draw'): Stats {
   return s;
 }
 
-export const hasSeenRules = () => read<boolean>(KEY_SEEN_RULES) === true;
-export const markRulesSeen = () => write(KEY_SEEN_RULES, true);
+const KEY_SEEN_NORMAL_RULES = 'baduk-seen-normal-rules';
+/** 대국 방법 안내를 본 적 있는지(따내기 바둑·진짜 바둑 따로) */
+export const hasSeenRules = (mode: GameMode = 'capture') =>
+  read<boolean>(mode === 'normal' ? KEY_SEEN_NORMAL_RULES : KEY_SEEN_RULES) === true;
+export const markRulesSeen = (mode: GameMode = 'capture') =>
+  write(mode === 'normal' ? KEY_SEEN_NORMAL_RULES : KEY_SEEN_RULES, true);
 
 /** 브라우저가 저장 공간을 임의로 비우지 않도록 요청 */
 export function requestPersistence(): void {

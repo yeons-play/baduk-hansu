@@ -15,6 +15,8 @@ const P: Record<string, string> = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   play: '<path d="M8 5v14l11-7z"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  skip: '<path d="M5 5l8 7-8 7z"/><path d="M17 5v14"/>',
+  house: '<path d="M4 11l8-6 8 6"/><path d="M6 10v10h12V10"/><path d="M10 20v-5h4v5"/>',
 };
 
 export function icon(name: string): string {

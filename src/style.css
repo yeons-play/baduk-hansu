@@ -337,3 +337,28 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .parent { border: 2px solid var(--line); border-radius: var(--r-md); padding: 0 16px; }
 .parent summary { min-height: 3.4rem; display: flex; align-items: center; font-family: var(--title); font-size: 1.1rem; color: var(--sub); cursor: pointer; }
 .parent-in { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; }
+
+/* 진짜 바둑(집 짓기) */
+.card.wide { grid-column: span 2; flex-direction: row; align-items: center; gap: 14px; }
+.card.wide .card-ic { margin-bottom: 0; flex: none; }
+.card.wide .card-title { flex: none; }
+.card.wide .card-sub { flex: 1; text-align: right; }
+@media (max-width: 520px) {
+  .card.wide { flex-wrap: wrap; }
+  .card.wide .card-sub { flex-basis: 100%; text-align: left; }
+}
+.card-ic.yellow { background: var(--yellow); color: var(--yellow-ink); }
+.tools.five { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.tools.five button { font-size: 0.95rem; }
+.score-table { width: 100%; border-collapse: collapse; font-size: 1.1rem; text-align: center; }
+.score-table th, .score-table td { padding: 8px 4px; border-bottom: 2px solid var(--line); }
+.score-table thead th { font-family: var(--title); color: var(--sub); font-weight: normal; }
+.score-table tbody th { font-family: var(--title); text-align: left; }
+.score-table b { font-size: 1.3rem; color: var(--primary); }
+.rules-board.score-board { width: min(320px, 72%); }
+.back { white-space: nowrap; }
+@media (max-width: 500px) {
+  .bar .pill .pill-name { display: none; } /* 좁은 화면은 별만 */
+  .tools.five button { font-size: 0.8rem; white-space: nowrap; }
+  .tools.five .tool-ic { width: 2.6rem; height: 2.6rem; }
+}

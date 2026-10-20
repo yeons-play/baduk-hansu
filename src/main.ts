@@ -3,7 +3,7 @@ import '@fontsource/jua/latin-400.css';
 import '@fontsource/gowun-dodum/korean-400.css';
 import '@fontsource/gowun-dodum/latin-400.css';
 import './style.css';
-import { BLACK, WHITE, Game, type IllegalReason } from './engine/rules';
+import { BLACK, WHITE, Game, type GameMode, type IllegalReason } from './engine/rules';
 import { chooseMove, type Level, type MoveReason } from './engine/ai/beginner';
 import { pointFromEvent, renderBoard } from './ui/board';
 import { type Mood, starBurst, stoneFace } from './ui/faces';
@@ -35,7 +35,17 @@ import { LessonPlayer, rich } from './lessons/player';
 // 화면 이동은 아래 탭과 '← 뒤로' 버튼만.
 
 type Screen = 'home' | 'game' | 'learn' | 'puzzle' | 'record' | 'lesson';
-type Sheet = null | 'start' | 'rules' | 'resign' | 'result' | 'settings' | 'lesson-done' | 'reset-lessons';
+type Sheet =
+  | null
+  | 'start'
+  | 'rules'
+  | 'resign'
+  | 'result'
+  | 'settings'
+  | 'lesson-done'
+  | 'reset-lessons'
+  | 'pass'
+  | 'score';
 
 const ui = {
   screen: 'home' as Screen,
@@ -43,6 +53,10 @@ const ui = {
   level: 1 as Level,
   /** 따내기 바둑에서 먼저 잡아야 하는 돌 수 */
   target: 1 as Target,
+  /** 고르는 중인 놀이: 따내기 바둑(capture) 또는 집 짓는 진짜 바둑(normal) */
+  mode: 'capture' as GameMode,
+  /** 따내기 바둑 판 크기 */
+  size: 7 as BoardSize,
   game: null as Game | null,
   preview: null as number | null,
   hint: null as number | null,
@@ -74,6 +88,7 @@ const HINT_TEXT: Record<MoveReason, string> = {
   capture: '여기에 놓으면 하양이를 잡을 수 있어요!',
   escape: '까망이가 위험해요! 여기로 도망가요',
   atari: '여기에 놓으면 하양이의 숨구멍(활로)이 하나만 남아요',
+  territory: '아직 누구 집도 아닌 넓은 곳이에요. 여기에 놓아 내 집을 넓혀요',
   connect: '친구 돌 옆에 붙이면 튼튼해져요',
   shape: '다른 돌 가까이에 놓아 볼까요?',
   pass: '놓을 곳이 없어요',
@@ -81,8 +96,12 @@ const HINT_TEXT: Record<MoveReason, string> = {
 
 type Target = 1 | 2 | 3;
 const TARGETS: Target[] = [1, 2, 3];
-/** 이 강까지 배우면 따내기 바둑 준비 끝(단수·잡기·도망가기) */
-const READY_LESSON = 6;
+type BoardSize = 5 | 7 | 9;
+const SIZES: BoardSize[] = [5, 7, 9];
+/** 진짜 바둑 판 크기 — 덤 7은 9줄 기준(docs/rules.md) */
+const NORMAL_SIZE = 9;
+/** 이 강까지 배우면 준비 끝: 따내기 바둑은 6강(단수·잡기·도망가기), 진짜 바둑은 12강 */
+const READY_LESSON: Record<GameMode, number> = { capture: 6, normal: 12 };
 
 const LEVELS: Record<Level, { name: string; stars: string }> = {
   1: { name: '쉬워요', stars: '★' },
@@ -94,7 +113,10 @@ const LEVELS: Record<Level, { name: string; stars: string }> = {
 // ───────── 대국 진행 ─────────
 
 function newGame(level: Level, target: Target) {
-  ui.game = new Game({ size: 9, mode: 'capture', captureTarget: target });
+  ui.game =
+    ui.mode === 'normal'
+      ? new Game({ size: NORMAL_SIZE, mode: 'normal' })
+      : new Game({ size: ui.size, mode: 'capture', captureTarget: target });
   ui.level = level;
   ui.target = target;
   resetMarks();
@@ -118,6 +140,8 @@ function resumeGame(): boolean {
   }
   ui.game = g;
   ui.level = saved.level;
+  ui.mode = saved.mode;
+  if (saved.mode === 'capture' && SIZES.includes(saved.size as BoardSize)) ui.size = saved.size as BoardSize;
   if (TARGETS.includes(saved.captureTarget as Target)) ui.target = saved.captureTarget as Target;
   resetMarks();
   return true;
@@ -182,16 +206,53 @@ function scheduleAI() {
       return;
     }
     const c = chooseMove(game, { level: ui.level });
-    if (c.point == null) game.pass();
-    else {
-      const r = game.play(c.point);
-      sfx(r.ok && r.captured.length ? 'capture' : 'stone');
+    if (c.point == null) {
+      game.pass();
+      ui.aiThinking = false;
+      persist();
+      if (game.isOver) return endOrScore();
+      showToast(game.rules.mode === 'normal' ? '하양이가 차례를 넘겼어요. 다 두었으면 나도 넘겨요' : '하양이가 차례를 넘겼어요');
+      return;
     }
+    const r = game.play(c.point);
+    sfx(r.ok && r.captured.length ? 'capture' : 'stone');
     ui.aiThinking = false;
     persist();
     if (game.isOver) return finishGame();
     render();
   }, AI_DELAY);
+}
+
+/** 게임이 끝났을 때: 진짜 바둑에서 둘 다 넘겼으면 먼저 집을 세어 보여주고(더 두기 가능), 아니면 바로 결과 */
+function endOrScore() {
+  const g = ui.game!;
+  if (g.result?.reason === 'score') {
+    ui.sheet = 'score';
+    resetMarks();
+    const s = g.result.score;
+    speak(
+      `까망이는 ${s.blackTotal}점, 하양이는 덤까지 ${s.whiteTotal}점이에요. ${
+        s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요.' : '똑같아요!'
+      }`,
+    );
+    render();
+    return;
+  }
+  finishGame();
+}
+
+/** 집 세기 화면에서 '더 둘래요': 넘기기를 되돌려 다시 까망이 차례로 */
+function resumeAfterScore() {
+  const g = ui.game;
+  if (!g) return;
+  do {
+    g.undo();
+  } while (g.moves.length && g.toMove !== HUMAN);
+  ui.sheet = null;
+  resetMarks();
+  persist();
+  render();
+  scheduleAI();
 }
 
 function finishGame() {
@@ -214,6 +275,15 @@ function finishGame() {
           };
   } else if (res.reason === 'resign') {
     ui.result = { title: '다음에 또 해요', body: '다시 하면 더 잘할 수 있어요!', mood: 'happy', win: false };
+  } else if (res.reason === 'score') {
+    const s = res.score;
+    const detail = `까망이 ${s.blackTotal}점, 하양이 ${s.whiteTotal}점(덤 ${s.komi}점 포함)`;
+    ui.result =
+      outcome === 'win'
+        ? { title: '와, 이겼어요!', body: `내 집을 더 많이 지었어요! ${detail}`, mood: 'wow', win: true }
+        : outcome === 'loss'
+          ? { title: '아쉬워요!', body: `하양이 집이 조금 더 많았어요. ${detail}`, mood: 'oops', win: false }
+          : { title: '비겼어요!', body: `점수가 똑같아요. ${detail}`, mood: 'happy', win: false };
   } else {
     ui.result = { title: '비겼어요', body: '둘 다 돌을 잡지 못했어요.', mood: 'happy', win: false };
   }
@@ -242,7 +312,9 @@ function showHint() {
   const g = ui.game;
   if (!g || ui.aiThinking || g.toMove !== HUMAN) return;
   const c = chooseMove(g, { level: 3 });
-  if (c.point == null) return showToast('놓을 곳이 없어요');
+  if (c.point == null) {
+    return showToast(g.rules.mode === 'normal' ? '이제 놓을 곳이 거의 없어요. 차례 넘기기를 눌러도 돼요' : '놓을 곳이 없어요');
+  }
   ui.hint = c.point;
   ui.hintText = HINT_TEXT[c.reason];
   ui.preview = null;
@@ -339,10 +411,15 @@ function homeHTML(): string {
       <h2>하양이와 따내기 바둑</h2>
       <p>하양이 돌을 먼저 <b>${ui.target}개</b> 잡으면 이겨요!</p>
     </div>
-    <button class="btn primary big" data-action="open-start">${saved ? '이어서 하기' : '하양이랑 놀기'} ${icon('arrow')}</button>
+    <button class="btn primary big" data-action="open-start" data-mode="capture">${saved?.mode === 'capture' ? '이어서 하기' : '하양이랑 놀기'} ${icon('arrow')}</button>
   </section>
 
   <div class="grid2">
+    <button class="card wide" data-action="open-start" data-mode="normal">
+      <span class="card-ic yellow">${icon('house')}</span>
+      <span class="card-title">진짜 바둑 (집 짓기)</span>
+      <span class="card-sub">${saved?.mode === 'normal' ? '하던 판이 있어요 · 이어서 하기' : '9줄 바둑판 · 집을 더 많이 지으면 이겨요'}</span>
+    </button>
     <button class="card" data-action="tab" data-tab="learn">
       <span class="card-ic mint">${icon('book')}</span>
       <span class="card-title">강의 목록</span>
@@ -373,15 +450,17 @@ function gameHTML(): string {
       : `<div class="guide ${ui.hintText ? 'has-hint' : ''}">${
           ui.hintText
             ? `${icon('bulb')}<span>${esc(ui.hintText)}</span>`
-            : humanTurn
+            : g.isOver
+              ? '<span>다 두었어요</span>'
+              : humanTurn
               ? '<span>놓고 싶은 곳을 눌러요</span>'
               : '<span class="thinking">하양이가 생각하고 있어요…</span>'
         }</div>`;
   return `<main class="screen game">
   <header class="bar">
     <button class="back" data-action="exit-game">${icon('chev')}나가기</button>
-    <h1>따내기 바둑</h1>
-    <span class="pill">${LEVELS[ui.level].stars} ${LEVELS[ui.level].name}</span>
+    <h1>${g.rules.mode === 'normal' ? '진짜 바둑' : '따내기 바둑'}</h1>
+    <span class="pill" aria-label="하양이 실력 ${LEVELS[ui.level].name}">${LEVELS[ui.level].stars}<span class="pill-name"> ${LEVELS[ui.level].name}</span></span>
   </header>
   <div class="game-layout">
     <div class="board-col">
@@ -405,11 +484,20 @@ function gameHTML(): string {
           <span class="pcount" aria-label="잡은 돌">${g.captures(WHITE)}</span>
         </div>
       </div>
-      <p class="goal">먼저 돌 <b>${g.rules.captureTarget}개</b>를 잡으면 이겨요 · 숫자는 잡은 돌</p>
+      ${
+        g.rules.mode === 'normal'
+          ? `<p class="goal">집을 더 많이 지으면 이겨요 · 하양이는 <b>덤 ${g.rules.komi}점</b> · 숫자는 잡은 돌</p>`
+          : `<p class="goal">먼저 돌 <b>${g.rules.captureTarget}개</b>를 잡으면 이겨요 · 숫자는 잡은 돌</p>`
+      }
       ${status}
-      <nav class="tools" aria-label="놀이 도구">
+      <nav class="tools ${g.rules.mode === 'normal' ? 'five' : ''}" aria-label="놀이 도구">
         <button data-action="hint" ${humanTurn ? '' : 'disabled'}><span class="tool-ic yellow">${icon('bulb')}</span>도와줘</button>
         <button data-action="undo" ${canUndo ? '' : 'disabled'}><span class="tool-ic sky">${icon('undo')}</span>되돌리기</button>
+        ${
+          g.rules.mode === 'normal'
+            ? `<button data-action="ask-pass" ${humanTurn ? '' : 'disabled'}><span class="tool-ic mint">${icon('skip')}</span>넘기기</button>`
+            : ''
+        }
         <button data-action="rules"><span class="tool-ic mint">${icon('help')}</span>규칙</button>
         <button data-action="ask-resign" ${humanTurn ? '' : 'disabled'}><span class="tool-ic pink">${icon('flag')}</span>그만하기</button>
       </nav>
@@ -433,7 +521,7 @@ function isOpen(id: number): boolean {
 function learnCardHTML(): string {
   const id = nextLessonId();
   if (id == null) {
-    return `<section class="learn-card done"><div><div class="kicker">바둑 배우기</div><h2>${LESSONS.length}강까지 다 배웠어요!</h2><p>다음 강은 곧 열려요. 하양이와 한 판 해 볼까요?</p></div></section>`;
+    return `<section class="learn-card done"><div><div class="kicker">바둑 배우기</div><h2>${LESSONS.length}강까지 다 배웠어요!</h2><p>이제 하양이와 진짜 바둑을 둬 볼까요?</p></div></section>`;
   }
   const l = LESSONS[id - 1];
   return `<section class="learn-card">
@@ -493,8 +581,10 @@ function sheetHTML(): string {
   let body = '';
   if (ui.sheet === 'start') {
     const saved = loadGame();
-    body = `<h2>하양이와 따내기 바둑</h2>
-    ${saved ? `<button class="btn primary full big" data-action="resume">하던 판 이어서 하기</button><div class="or">또는 새로 시작해요</div>` : ''}
+    const normal = ui.mode === 'normal';
+    const savedName = saved?.mode === 'normal' ? '진짜 바둑' : '따내기 바둑';
+    body = `<h2>${normal ? '하양이와 진짜 바둑' : '하양이와 따내기 바둑'}</h2>
+    ${saved ? `<button class="btn primary full big" data-action="resume">하던 ${savedName} 이어서 하기</button><div class="or">또는 새로 시작해요${saved.mode !== ui.mode ? ' (하던 판은 지워져요)' : ''}</div>` : ''}
     <p class="sheet-label">하양이 실력</p>
     <div class="chips" role="radiogroup" aria-label="하양이 실력">
       ${([1, 2, 3] as Level[])
@@ -504,16 +594,58 @@ function sheetHTML(): string {
         )
         .join('')}
     </div>
+    ${
+      normal
+        ? `<p class="sheet-p small">9줄 바둑판 · 하양이는 나중에 두니까 덤 7점을 받아요. 다 두었으면 '넘기기'를 눌러요.</p>`
+        : `<p class="sheet-label">바둑판 크기</p>
+    <div class="chips" role="radiogroup" aria-label="바둑판 크기">
+      ${SIZES.map(
+        (n) =>
+          `<button role="radio" aria-checked="${ui.size === n}" class="chip ${ui.size === n ? 'on' : ''}" data-action="size" data-size="${n}"><span class="chip-num">${n}줄</span>${n === 5 ? '작게' : n === 7 ? '보통' : '크게'}</button>`,
+      ).join('')}
+    </div>
     <p class="sheet-label">먼저 잡을 돌</p>
     <div class="chips" role="radiogroup" aria-label="먼저 잡을 돌 수">
       ${TARGETS.map(
         (t) =>
           `<button role="radio" aria-checked="${ui.target === t}" class="chip ${ui.target === t ? 'on' : ''}" data-action="target" data-target="${t}"><span class="chip-num">${t}개</span>${t === 1 ? '처음' : t === 2 ? '조금 더' : '길게'}</button>`,
       ).join('')}
-    </div>
+    </div>`
+    }
     ${readyNudgeHTML()}
     <button class="btn ${saved ? 'ghost' : 'primary'} full big" data-action="start">새로 시작</button>
     <button class="btn text full" data-action="close-sheet">닫기</button>`;
+  } else if (ui.sheet === 'rules' && ui.game?.rules.mode === 'normal') {
+    const g = Game.fromDiagram(['X . X . .', 'X X X . .', '. . O O O', '. . O . O', '. . O O O'], BLACK);
+    body = `<h2>진짜 바둑 놀이 방법</h2>
+    <div class="rules-board">${renderBoard(g, { owner: g.score().owner })}</div>
+    <ol class="rules">
+      <li><b>까망이(나)</b>와 <b>하양이</b>가 번갈아 돌을 놓아요.</li>
+      <li>내 돌로 둘러싼 빈 곳이 <b>내 집</b>이에요. 그림의 네모가 집이에요.</li>
+      <li>더 놓을 곳이 없으면 <b>넘기기</b>를 눌러요. 둘 다 넘기면 앱이 세어 줘요.</li>
+      <li>내 집 안의 하양이 돌은 끝나기 전에 <b>꼭 잡아요!</b> 판 위에 남은 돌은 다 살아 있는 돌로 세요.</li>
+      <li>돌 + 집이 더 많으면 이겨요. 하양이는 <b>덤 7점</b>을 더 받아요.</li>
+    </ol>
+    <button class="btn primary full big" data-action="close-rules">알았어요!</button>`;
+  } else if (ui.sheet === 'pass') {
+    body = `<h2>차례를 넘길까요?</h2><p class="sheet-p">더 놓을 곳이 없을 때 넘겨요. 하양이도 넘기면 바둑이 끝나고 집을 세어요.</p>
+    <div class="row2"><button class="btn ghost" data-action="close-sheet">더 둘래요</button><button class="btn primary" data-action="pass">넘길래요</button></div>`;
+  } else if (ui.sheet === 'score' && ui.game?.result?.reason === 'score') {
+    const g = ui.game;
+    const s = ui.game.result.score;
+    const verdict = s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요' : '똑같아요! 비겼어요';
+    body = `<h2>집을 세어 봐요</h2>
+    <div class="rules-board score-board">${renderBoard(g, { owner: s.owner })}</div>
+    <table class="score-table">
+      <thead><tr><th></th><th>돌</th><th>집</th><th>덤</th><th>합계</th></tr></thead>
+      <tbody>
+        <tr><th>까망이</th><td>${s.blackStones}</td><td>${s.blackArea}</td><td>-</td><td><b>${s.blackTotal}</b></td></tr>
+        <tr><th>하양이</th><td>${s.whiteStones}</td><td>${s.whiteArea}</td><td>${s.komi}</td><td><b>${s.whiteTotal}</b></td></tr>
+      </tbody>
+    </table>
+    <p class="sheet-p center"><b>${verdict}</b></p>
+    <p class="sheet-p small center">집 안에 잡지 않은 돌이 남아 있으면 '더 둘래요'를 눌러 마저 잡아요.</p>
+    <div class="row2"><button class="btn ghost" data-action="resume-play">더 둘래요</button><button class="btn primary" data-action="finish-score">끝낼래요</button></div>`;
   } else if (ui.sheet === 'rules') {
     const g = Game.fromDiagram(['. . . . .', '. . X . .', '. X O X .', '. . . . .', '. . . . .'], BLACK);
     body = `<h2>따내기 바둑 놀이 방법</h2>
@@ -571,7 +703,7 @@ function sheetHTML(): string {
     <div class="row2">${
       next
         ? `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="lesson-open" data-id="${next.id}">${next.id}강 하러 가기</button>`
-        : `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="open-start">하양이랑 놀기</button>`
+        : `<button class="btn ghost" data-action="tab" data-tab="learn">목록으로</button><button class="btn primary" data-action="open-start" data-mode="normal">하양이랑 진짜 바둑</button>`
     }</div>`;
   } else if (ui.sheet === 'result') {
     const r = ui.result;
@@ -579,7 +711,8 @@ function sheetHTML(): string {
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
     <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>`;
   }
-  const dismissable = ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings' || ui.sheet === 'reset-lessons';
+  const dismissable =
+    ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings' || ui.sheet === 'reset-lessons' || ui.sheet === 'pass';
   return `<div class="sheet-backdrop" ${dismissable ? 'data-action="close-sheet"' : ''}></div>
   <div class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div>${body}</div>`;
 }
@@ -587,10 +720,12 @@ function sheetHTML(): string {
 /** 4~6강(단수·잡기·도망가기)을 아직 안 배웠으면 먼저 배우도록 살짝 안내(막지는 않음) */
 function readyNudgeHTML(): string {
   const done = loadLessons().done;
-  if (done.includes(READY_LESSON) || READY_LESSON > LESSONS.length) return '';
+  const ready = READY_LESSON[ui.mode];
+  if (done.includes(ready) || ready > LESSONS.length) return '';
   const id = nextLessonId();
-  if (id == null) return '';
-  return `<div class="nudge">${icon('bulb')}<span>${READY_LESSON}강까지 배우면 돌 잡기가 더 쉬워져요!</span><button class="btn ghost" data-action="lesson-open" data-id="${id}">${id}강 배우기</button></div>`;
+  if (id == null || id > ready) return '';
+  const what = ui.mode === 'normal' ? '진짜 바둑이' : '돌 잡기가';
+  return `<div class="nudge">${icon('bulb')}<span>${ready}강까지 배우면 ${what} 더 쉬워져요!</span><button class="btn ghost" data-action="lesson-open" data-id="${id}">${id}강 배우기</button></div>`;
 }
 
 /** 받침에 따라 을/를 */
@@ -609,7 +744,7 @@ app.addEventListener('click', (ev) => {
   const target = ev.target as Element;
   const lsvg = target.closest('.lesson-screen .board-svg') as SVGSVGElement | null;
   if (lsvg && ui.lesson && !ui.sheet) {
-    ui.lesson.tapPoint(pointFromEvent(lsvg, 9, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));
+    ui.lesson.tapPoint(pointFromEvent(lsvg, ui.lesson.size, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));
     return;
   }
   const svg = target.closest('.game:not(.lesson-screen) .board-svg') as SVGSVGElement | null;
@@ -697,8 +832,31 @@ app.addEventListener('click', (ev) => {
       return;
     case 'open-start':
       if (ui.screen === 'lesson') ui.screen = 'home';
+      ui.mode = el.dataset.mode === 'normal' ? 'normal' : 'capture';
       ui.sheet = 'start';
       break;
+    case 'size':
+      ui.size = Number(el.dataset.size) as BoardSize;
+      break;
+    case 'ask-pass':
+      ui.sheet = 'pass';
+      break;
+    case 'pass': {
+      const g = ui.game;
+      ui.sheet = null;
+      if (!g || g.isOver || ui.aiThinking || g.toMove !== HUMAN) break;
+      g.pass();
+      resetMarks();
+      persist();
+      if (g.isOver) return endOrScore();
+      render();
+      scheduleAI();
+      return;
+    }
+    case 'resume-play':
+      return resumeAfterScore();
+    case 'finish-score':
+      return finishGame();
     case 'level':
       ui.level = Number(el.dataset.level) as Level;
       break;
@@ -718,7 +876,7 @@ app.addEventListener('click', (ev) => {
       ui.sheet = null;
       break;
     case 'close-rules':
-      markRulesSeen();
+      markRulesSeen(ui.game?.rules.mode ?? 'capture');
       ui.sheet = null;
       break;
     case 'rules':
@@ -802,7 +960,7 @@ app.addEventListener('change', (ev) => {
 
 function enterGame() {
   ui.screen = 'game';
-  ui.sheet = hasSeenRules() ? null : 'rules';
+  ui.sheet = hasSeenRules(ui.game?.rules.mode ?? 'capture') ? null : 'rules';
   render();
   scheduleAI();
 }

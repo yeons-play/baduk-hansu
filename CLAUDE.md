@@ -40,5 +40,6 @@
 
 ## 강의·소리
 - 강의 데이터는 `src/lessons/data.ts`. 숨구멍 위치·개수, 다음 차례 같은 정답은 직접 쓰지 말고 엔진이 계산(`src/lessons/engine.ts`). `tests/lessons.test.ts`가 모든 단계를 엔진으로 검증.
-- 단계 종류: `explain`(설명) · `tap`(점 누르기) · `liberties`(숨구멍 찾기) · `choice`(고르기, 정답은 `libs`·`turn`·`legal`로 엔진 계산 가능) · `free`(하양이와 번갈아 놓기) · `move`(흑돌 직접 놓기, `goal`: `capture` 잡기·`atari` 단수 만들기·`escape` 살리기 — 정답 점은 엔진이 판 전체를 시험해 찾음) · `find`(단수인 하양이 돌 모두 찾기).
+- 단계 종류: `explain`(설명) · `tap`(점 누르기) · `liberties`(숨구멍 찾기) · `choice`(고르기, 정답은 `libs`·`area`·`total`·`more`·`turn`·`legal`로 엔진 계산 가능) · `free`(하양이와 번갈아 놓기) · `move`(흑돌 직접 놓기, `goal`: `capture`·`atari`·`escape`·`connect`·`cut`·`live` — 정답 점은 엔진이 판 전체를 시험해 찾음) · `find`(단수인 하양이 돌 모두 찾기) · `territory`(까망이 집 모두 찾기).
+- 강마다 바둑판 크기(`size`: 5·7·9)가 다르다. 작은 판에서 시작해 12강에서 9줄로. 좌표는 그 강의 판 기준.
 - 효과음은 파일 없이 Web Audio로 합성(`src/audio.ts`), 읽어 주기는 기기 한국어 음성(`src/speech.ts`). 둘 다 설정에서 끌 수 있음(`baduk-settings`).

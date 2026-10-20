@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLACK, WHITE, Game, toPoint } from '../src/engine/rules';
-import { chooseMove, type Level } from '../src/engine/ai/beginner';
+import { JOSEKI, chooseMove, josekiMoves, type Level } from '../src/engine/ai/beginner';
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -221,5 +221,99 @@ describe('초보다운 실수(이상한 수는 두지 않음)', () => {
     }
     expect(missed).toBeGreaterThan(20);
     expect(missed).toBeLessThan(160);
+  });
+});
+
+describe('초반 운영(귀 → 변 → 가운데)', () => {
+  const quad = (size: number, p: number) => {
+    const x = p % size, y = Math.floor(p / size), m = (size - 1) / 2;
+    return x === m || y === m ? -1 : (x < m ? 0 : 1) + (y < m ? 0 : 2);
+  };
+  for (const size of [9, 13]) {
+    it(`${size}줄: 어느 단계든 처음 네 수는 서로 다른 빈 귀의 3·4선`, () => {
+      for (let i = 0; i < 12; i++) {
+        const rand = rng(2000 + size * 10 + i);
+        const g = new Game({ size, mode: 'normal' });
+        const qs = new Set<number>();
+        for (let n = 0; n < 4; n++) {
+          const c = chooseMove(g, { level: ((i % 3) + 1) as Level, rand });
+          expect(c.reason).toBe('corner');
+          const p = c.point!;
+          const line = (v: number) => Math.min(v, size - 1 - v) + 1;
+          expect([3, 4]).toContain(line(p % size));
+          expect([3, 4]).toContain(line(Math.floor(p / size)));
+          qs.add(quad(size, p));
+          g.play(p);
+        }
+        expect(qs.size).toBe(4);
+      }
+    });
+  }
+
+  it('13줄: 하양이 귀에 걸쳐 오면 귀를 지키며 받는다', () => {
+    // 흑 (3,3)·(9,3), 백 (9,9)·(3,9) — 귀 넷이 찼고, 흑이 백 (9,9)에 날일자로 걸침 (7,10)
+    const g = new Game({ size: 13, mode: 'normal' });
+    for (const [x, y] of [[3, 3], [9, 9], [9, 3], [3, 9], [7, 10]]) g.play(toPoint(13, x, y));
+    for (let i = 0; i < 10; i++) {
+      const c = chooseMove(g, { level: 3, rand: rng(70 + i) });
+      expect(['answer', 'joseki']).toContain(c.reason);
+      const [x, y] = [c.point! % 13, Math.floor(c.point! / 13)];
+      expect(Math.max(Math.abs(x - 7), Math.abs(y - 10))).toBeLessThanOrEqual(3); // 걸쳐 온 돌 가까이
+    }
+  });
+});
+
+describe('기본 정석(13줄)', () => {
+  // 귀 좌표(1부터) → 판 위 점, corner 0~3, swap 가로·세로 뒤집기
+  const at = (corner: number, swap: boolean, a: number, b: number) => {
+    const [c, r] = swap ? [b, a] : [a, b];
+    const x = corner & 1 ? 13 - c : c - 1;
+    const y = corner >> 1 ? 13 - r : r - 1;
+    return y * 13 + x;
+  };
+
+  it('정석 수순은 모두 합법이고 돌을 잡지 않는다', () => {
+    for (const j of JOSEKI) {
+      const g = new Game({ size: 13, mode: 'normal' });
+      for (const [a, b] of j.moves) {
+        const r = g.play(at(0, false, a, b));
+        expect(r.ok && r.captured.length === 0).toBe(true);
+      }
+    }
+  });
+
+  it('상대가 정석대로 두면, 하양이도 귀마다 끝까지 정석대로 받는다(1·3단계)', () => {
+    for (const j of JOSEKI)
+      for (let corner = 0; corner < 4; corner++)
+        for (const swap of [false, true])
+          for (const level of [1, 3] as Level[]) {
+            // 하양이(백)가 화점, 까망이(흑)가 정석의 상대. 흑이 먼저 두므로 흑 한 수를 다른 귀에 먼저 둠
+            const g = new Game({ size: 13, mode: 'normal' });
+            g.play(at((corner + 3) % 4, false, 4, 4));
+            g.play(at(corner, swap, ...j.moves[0]));
+            g.play(at(corner, swap, ...j.moves[1])); // 걸침·침입
+            let plies = 2;
+            const rand = rng(corner * 7 + (swap ? 1 : 0) + level * 100);
+            // 하양이 차례에는 정석 수를 두고, 까망이 차례에는 정석 책의 수를 하나 골라 따라간다
+            for (;;) {
+              const book = josekiMoves(g, g.toMove);
+              if (book.size === 0) break;
+              if (g.toMove === WHITE) {
+                const c = chooseMove(g, { level, rand });
+                expect(c.reason).toBe('joseki');
+                expect(book.has(c.point!)).toBe(true);
+                g.play(c.point!);
+              } else g.play([...book][0]);
+              plies++;
+            }
+            expect(plies).toBe(j.moves.length);
+          }
+  });
+
+  it('9줄에서는 정석 책을 쓰지 않는다', () => {
+    const g = new Game({ size: 9, mode: 'normal' });
+    g.play(toPoint(9, 2, 2));
+    g.play(toPoint(9, 6, 6));
+    expect(josekiMoves(g, BLACK).size).toBe(0);
   });
 });

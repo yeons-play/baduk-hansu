@@ -8,7 +8,21 @@ import { BLACK, EMPTY, WHITE, type Stone, Game, opponent, toXY } from '../rules'
 
 export type Level = 1 | 2 | 3;
 
-export type MoveReason = 'win' | 'capture' | 'escape' | 'atari' | 'connect' | 'territory' | 'shape' | 'pass';
+export type MoveReason =
+  | 'win'
+  | 'capture'
+  | 'escape'
+  | 'atari'
+  | 'connect'
+  | 'joseki'
+  | 'corner'
+  | 'approach'
+  | 'enclose'
+  | 'answer'
+  | 'side'
+  | 'territory'
+  | 'shape'
+  | 'pass';
 
 export interface AIChoice {
   point: number | null;
@@ -45,8 +59,9 @@ export function chooseMove(game: Game, opts: AIOptions): AIChoice {
   const blind = rand() < BLIND[level];
   const owner = game.rules.mode === 'normal' ? settledOwner(game) : null;
   const infl = owner ? influence(game) : null;
+  const book = owner ? josekiMoves(game, me) : null;
 
-  const all = legal.map((p) => ({ point: p, ...evaluate(game, p, me, myAtari, level, oversight, owner, infl) }));
+  const all = legal.map((p) => ({ point: p, ...evaluate(game, p, me, myAtari, level, oversight, owner, infl, book) }));
   const bestRaw = Math.max(...all.map((c) => c.score));
   if (owner && bestRaw < PASS_BELOW) return { point: null, reason: 'pass' };
 
@@ -68,6 +83,7 @@ function evaluate(
   oversight: boolean,
   owner: Uint8Array | null,
   infl: Int16Array | null,
+  book: Set<number> | null = null,
 ): { score: number; reason: MoveReason } {
   const opp = opponent(me);
   const size = game.size;
@@ -78,6 +94,7 @@ function evaluate(
   const ownEye = owner ? game.geo.neighbors[p].every((q) => game.at(q) === me) : false;
   // 정규 대국: 이 수로 내 세력권이 얼마나 넓어지는지(뭉쳐 두면 거의 늘지 않음)
   const gain = infl ? territoryGain(game, infl, p, me) : 0;
+  const opening = owner ? openingPlan(game, p, me) : null;
   const square = owner ? makesSquare(game, p, me) : false;
 
   // 모양 점수: 1·2선은 초반에 피하고, 다른 돌 근처를 선호
@@ -145,6 +162,18 @@ function evaluate(
       else if (ownedBy === EMPTY) {
         score += 4 * gain; // 아직 누구 집도 아닌 곳을 넓히는 만큼
         if (gain > 0 && reason === 'shape') reason = 'territory';
+      }
+      // 기본 정석: 귀에서 정해진 좋은 순서를 이어 둔다(싸움보다는 낮고, 포석보다는 높게)
+      if (!saving && cap === 0 && book?.has(p)) {
+        score += 110;
+        if (reason === 'shape' || reason === 'territory' || reason === 'connect' || reason === 'atari') reason = 'joseki';
+      }
+      // 초반 운영(포석): 귀 → 걸침·굳힘·받기 → 변 → 가운데
+      if (!saving && cap === 0 && ownedBy === EMPTY && opening) {
+        if (opening.score) {
+          score += opening.score;
+          if (reason === 'shape' || reason === 'territory' || reason === 'connect') reason = opening.reason;
+        }
       }
       // 내 돌끼리 뭉치기(덩어리·네모 모양)는 집을 넓히지 못하니 피한다
       if (!saving && cap === 0) {
@@ -359,3 +388,166 @@ function nearStone(game: Game, x: number, y: number, d: number): boolean {
   return false;
 }
 // 힌트 문구는 화면 쪽(src/main.ts의 HINT_TEXT)에서 7살 말투로 관리한다.
+
+// ───────── 초반 운영(포석) ─────────
+// 바둑의 기본 요령 "귀 → 변 → 가운데"(금귀 은변 초중앙)를 점수로 옮긴다. 정석 책을 외우는 대신 기본 모양만:
+//  빈 귀 차지(3·4선) · 상대 귀에 걸치기(날일자·한 칸) · 내 귀 굳히기 · 걸쳐 오면 받기 · 귀가 다 차면 변으로 벌리기.
+// 싸움(잡기·살리기·단수)은 점수가 훨씬 커서 언제나 이쪽보다 먼저 본다.
+
+/** 1부터 세는 선(1선 = 맨 가장자리) */
+const lineOf = (size: number, i: number) => Math.min(i, size - 1 - i) + 1;
+
+/** 귀 구역: 두 방향 모두 이 선 안쪽 */
+const cornerLine = (size: number) => (size >= 13 ? 5 : 4);
+
+/** 초반으로 보는 돌 수(판의 18% 미만) */
+const isOpening = (game: Game) => {
+  let n = 0;
+  for (let p = 0; p < game.geo.n; p++) if (game.at(p) !== EMPTY) n++;
+  return n < game.geo.n * 0.18;
+};
+
+/** 판 가운데 줄을 뺀, p가 속한 귀 번호(0~3). 가운데 줄이면 -1 */
+function quadrant(size: number, x: number, y: number): number {
+  const mid = (size - 1) / 2;
+  if (x === mid || y === mid) return -1;
+  return (x < mid ? 0 : 1) + (y < mid ? 0 : 2);
+}
+
+/** 귀 구역(굳힘·걸침 돌까지 보려고 한 선 더 넓게) 안의 돌(색별) */
+function cornerStones(game: Game, q: number): { mine: number[]; theirs: number[]; all: number } {
+  const size = game.size;
+  const c = cornerLine(size) + 1;
+  const out = { [BLACK]: [] as number[], [WHITE]: [] as number[] } as Record<number, number[]>;
+  for (let p = 0; p < game.geo.n; p++) {
+    const v = game.at(p);
+    if (v === EMPTY) continue;
+    const [x, y] = toXY(size, p);
+    if (lineOf(size, x) <= c && lineOf(size, y) <= c && quadrant(size, x, y) === q) out[v].push(p);
+  }
+  return { mine: out[BLACK], theirs: out[WHITE], all: out[BLACK].length + out[WHITE].length };
+}
+
+const knightOrJump = (dx: number, dy: number) => {
+  const a = Math.abs(dx);
+  const b = Math.abs(dy);
+  return (a === 1 && b === 2) || (a === 2 && b === 1) || (a === 0 && b === 2) || (a === 2 && b === 0);
+};
+
+export function openingPlan(game: Game, p: number, me: Stone): { score: number; reason: MoveReason } | null {
+  if (!isOpening(game)) return null;
+  const size = game.size;
+  const [x, y] = toXY(size, p);
+  const lx = lineOf(size, x);
+  const ly = lineOf(size, y);
+  const low = Math.min(lx, ly);
+  if (low <= 2) return { score: 0, reason: 'shape' }; // 초반 1·2선은 점수 없음(기존 감점 그대로)
+  const q = quadrant(size, x, y);
+  const c = cornerLine(size);
+
+  // 귀 네 곳의 상태
+  const corners = [0, 1, 2, 3].map((k) => cornerStones(game, k));
+  const flip = (cs: { mine: number[]; theirs: number[]; all: number }) =>
+    me === BLACK ? cs : { mine: cs.theirs, theirs: cs.mine, all: cs.all };
+
+  if (q >= 0) {
+    const cs = flip(corners[q]);
+    const near = (list: number[]) =>
+      list.some((s) => {
+        const [sx, sy] = toXY(size, s);
+        return knightOrJump(x - sx, y - sy);
+      });
+    const inCorner = lx <= c && ly <= c;
+    const good = lx <= 4 && ly <= 4; // 3·4선 자리(3-3, 3-4, 4-4)
+    if (cs.all === 0 && inCorner && good) {
+      // 빈 귀 차지: 화점(9줄 3-3, 13줄 4-4)을 조금 더 좋아함
+      const star = size >= 13 ? lx === 4 && ly === 4 : lx === 3 && ly === 3;
+      return { score: 60 + (star ? 4 : 0), reason: 'corner' };
+    }
+    if (cs.mine.length === 0 && cs.theirs.length === 1 && near(cs.theirs) && low <= 4 && Math.max(lx, ly) <= c + 1) {
+      return { score: 28, reason: 'approach' }; // 상대 귀에 걸치기
+    }
+    if (cs.mine.length === 1 && cs.theirs.length === 0 && near(cs.mine) && low <= 4 && Math.max(lx, ly) <= c + 1) {
+      return { score: 24, reason: 'enclose' }; // 내 귀 굳히기
+    }
+    if (cs.mine.length === 1 && cs.theirs.length === 1 && near(cs.mine) && low <= 4) {
+      // 걸쳐 오면 받기: 내 돌에서 날일자·한 칸이고, 걸쳐 온 돌 가까이(3칸 안)
+      const [ax, ay] = toXY(size, cs.theirs[0]);
+      if (Math.max(Math.abs(x - ax), Math.abs(y - ay)) <= 3) return { score: 40, reason: 'answer' };
+    }
+  }
+
+  // 귀가 다 찼으면 변(3·4선)으로 벌리기, 가운데는 아직
+  const cornersTaken = corners.every((cs) => cs.all > 0);
+  const onSide = low <= 4 && !(lx <= c && ly <= c);
+  if (cornersTaken && onSide) {
+    if (nearStone(game, x, y, 1)) return { score: 0, reason: 'shape' };
+    const open = !nearStone(game, x, y, 2);
+    return { score: open ? 16 : 8, reason: 'side' };
+  }
+  if (low > 4 && !cornersTaken) return { score: -8, reason: 'shape' }; // 귀가 남았는데 가운데부터 두지 않기
+  return { score: 0, reason: 'shape' };
+}
+
+// ───────── 기본 정석 ─────────
+// 화점(4-4)의 입문 정석만. 좌표는 그 귀 꼭짓점에서 센 (가로 줄, 세로 줄), 1부터. A = 화점 주인, B = 상대, 번갈아 둔다.
+// 귀 네 곳 × 가로·세로 뒤집기로 맞춰 본다. 귀 구역(7줄×7줄) 안의 돌이 어떤 수순의 앞부분과 똑같을 때만 다음 수를 낸다.
+// 13줄 이상에서만 쓴다(9줄은 귀끼리 너무 가까워 정석 모양이 맞지 않음).
+export const JOSEKI: { name: string; moves: [number, number][] }[] = [
+  // 날일자 걸침(3-6) → 날일자 받기 → 두 칸 벌림
+  { name: '걸침·날일자 받기', moves: [[4, 4], [3, 6], [6, 3], [3, 9]] },
+  // 날일자 걸침 → 한 칸 받기 → 두 칸 벌림
+  { name: '걸침·한 칸 받기', moves: [[4, 4], [3, 6], [6, 4], [3, 9]] },
+  // 3-3 침입: 막기 → 기기 → 젖히기 → 젖히기 → 젖히기 → 잇기 → 잇기
+  { name: '3-3 침입', moves: [[4, 4], [3, 3], [4, 3], [3, 4], [3, 5], [2, 5], [2, 6], [2, 4], [3, 6]] },
+];
+
+const JOSEKI_AREA = 7;
+
+/** 지금 차례(me)가 정석대로 둘 수 있는 점들 */
+export function josekiMoves(game: Game, me: Stone): Set<number> {
+  const out = new Set<number>();
+  const size = game.size;
+  if (size < 13) return out;
+  for (let corner = 0; corner < 4; corner++) {
+    const fx = corner & 1;
+    const fy = corner >> 1;
+    for (const swap of [false, true]) {
+      // 귀 좌표 (a, b) → 판 위 점
+      const toBoard = (a: number, b: number) => {
+        const [c, r] = swap ? [b, a] : [a, b];
+        const x = fx ? size - c : c - 1;
+        const y = fy ? size - r : r - 1;
+        return y * size + x;
+      };
+      // 이 귀 구역 안의 돌
+      const local = new Map<number, Stone>();
+      for (let a = 1; a <= JOSEKI_AREA; a++)
+        for (let b = 1; b <= JOSEKI_AREA; b++) {
+          const p = toBoard(a, b);
+          const v = game.at(p);
+          if (v !== EMPTY) local.set(p, v as Stone);
+        }
+      if (local.size === 0) continue;
+      const ownerA = game.at(toBoard(4, 4));
+      if (ownerA === EMPTY) continue;
+      for (const j of JOSEKI) {
+        const k = local.size;
+        // 걸침·침입(2번째 수)은 정석 책에서 내지 않는다: 빈 귀가 먼저이고, 걸침은 포석 점수가 맡음
+        if (k < 2 || k >= j.moves.length) continue;
+        let ok = true;
+        for (let i = 0; i < k && ok; i++) {
+          const want = i % 2 === 0 ? ownerA : opponent(ownerA as Stone);
+          const p = toBoard(...j.moves[i]);
+          if (local.get(p) !== want) ok = false;
+        }
+        if (!ok) continue;
+        const nextColor = k % 2 === 0 ? ownerA : opponent(ownerA as Stone);
+        if (nextColor !== me) continue;
+        const p = toBoard(...j.moves[k]);
+        if (game.at(p) === EMPTY && game.isLegal(p)) out.add(p);
+      }
+    }
+  }
+  return out;
+}

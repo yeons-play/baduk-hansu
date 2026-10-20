@@ -561,11 +561,6 @@ function recordHTML(): string {
 </main>`;
 }
 
-function placeholderHTML(title: string, body: string): string {
-  return `<main class="screen"><header class="page-head"><h1>${title}</h1><p>${body}</p></header>
-  <div class="soon" aria-hidden="true">${stoneFace('black', 120, 'think')}${stoneFace('white', 120, 'happy')}</div></main>`;
-}
-
 function practiceOpen(set: PracticeSet): boolean {
   return loadLessons().done.includes(set.after);
 }

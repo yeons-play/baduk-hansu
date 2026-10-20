@@ -14,6 +14,7 @@ export type MoveReason =
   | 'escape'
   | 'atari'
   | 'connect'
+  | 'joseki'
   | 'corner'
   | 'approach'
   | 'enclose'
@@ -58,8 +59,9 @@ export function chooseMove(game: Game, opts: AIOptions): AIChoice {
   const blind = rand() < BLIND[level];
   const owner = game.rules.mode === 'normal' ? settledOwner(game) : null;
   const infl = owner ? influence(game) : null;
+  const book = owner ? josekiMoves(game, me) : null;
 
-  const all = legal.map((p) => ({ point: p, ...evaluate(game, p, me, myAtari, level, oversight, owner, infl) }));
+  const all = legal.map((p) => ({ point: p, ...evaluate(game, p, me, myAtari, level, oversight, owner, infl, book) }));
   const bestRaw = Math.max(...all.map((c) => c.score));
   if (owner && bestRaw < PASS_BELOW) return { point: null, reason: 'pass' };
 
@@ -81,6 +83,7 @@ function evaluate(
   oversight: boolean,
   owner: Uint8Array | null,
   infl: Int16Array | null,
+  book: Set<number> | null = null,
 ): { score: number; reason: MoveReason } {
   const opp = opponent(me);
   const size = game.size;
@@ -159,6 +162,11 @@ function evaluate(
       else if (ownedBy === EMPTY) {
         score += 4 * gain; // 아직 누구 집도 아닌 곳을 넓히는 만큼
         if (gain > 0 && reason === 'shape') reason = 'territory';
+      }
+      // 기본 정석: 귀에서 정해진 좋은 순서를 이어 둔다(싸움보다는 낮고, 포석보다는 높게)
+      if (!saving && cap === 0 && book?.has(p)) {
+        score += 110;
+        if (reason === 'shape' || reason === 'territory' || reason === 'connect' || reason === 'atari') reason = 'joseki';
       }
       // 초반 운영(포석): 귀 → 걸침·굳힘·받기 → 변 → 가운데
       if (!saving && cap === 0 && ownedBy === EMPTY && opening) {
@@ -479,4 +487,67 @@ export function openingPlan(game: Game, p: number, me: Stone): { score: number; 
   }
   if (low > 4 && !cornersTaken) return { score: -8, reason: 'shape' }; // 귀가 남았는데 가운데부터 두지 않기
   return { score: 0, reason: 'shape' };
+}
+
+// ───────── 기본 정석 ─────────
+// 화점(4-4)의 입문 정석만. 좌표는 그 귀 꼭짓점에서 센 (가로 줄, 세로 줄), 1부터. A = 화점 주인, B = 상대, 번갈아 둔다.
+// 귀 네 곳 × 가로·세로 뒤집기로 맞춰 본다. 귀 구역(7줄×7줄) 안의 돌이 어떤 수순의 앞부분과 똑같을 때만 다음 수를 낸다.
+// 13줄 이상에서만 쓴다(9줄은 귀끼리 너무 가까워 정석 모양이 맞지 않음).
+export const JOSEKI: { name: string; moves: [number, number][] }[] = [
+  // 날일자 걸침(3-6) → 날일자 받기 → 두 칸 벌림
+  { name: '걸침·날일자 받기', moves: [[4, 4], [3, 6], [6, 3], [3, 9]] },
+  // 날일자 걸침 → 한 칸 받기 → 두 칸 벌림
+  { name: '걸침·한 칸 받기', moves: [[4, 4], [3, 6], [6, 4], [3, 9]] },
+  // 3-3 침입: 막기 → 기기 → 젖히기 → 젖히기 → 젖히기 → 잇기 → 잇기
+  { name: '3-3 침입', moves: [[4, 4], [3, 3], [4, 3], [3, 4], [3, 5], [2, 5], [2, 6], [2, 4], [3, 6]] },
+];
+
+const JOSEKI_AREA = 7;
+
+/** 지금 차례(me)가 정석대로 둘 수 있는 점들 */
+export function josekiMoves(game: Game, me: Stone): Set<number> {
+  const out = new Set<number>();
+  const size = game.size;
+  if (size < 13) return out;
+  for (let corner = 0; corner < 4; corner++) {
+    const fx = corner & 1;
+    const fy = corner >> 1;
+    for (const swap of [false, true]) {
+      // 귀 좌표 (a, b) → 판 위 점
+      const toBoard = (a: number, b: number) => {
+        const [c, r] = swap ? [b, a] : [a, b];
+        const x = fx ? size - c : c - 1;
+        const y = fy ? size - r : r - 1;
+        return y * size + x;
+      };
+      // 이 귀 구역 안의 돌
+      const local = new Map<number, Stone>();
+      for (let a = 1; a <= JOSEKI_AREA; a++)
+        for (let b = 1; b <= JOSEKI_AREA; b++) {
+          const p = toBoard(a, b);
+          const v = game.at(p);
+          if (v !== EMPTY) local.set(p, v as Stone);
+        }
+      if (local.size === 0) continue;
+      const ownerA = game.at(toBoard(4, 4));
+      if (ownerA === EMPTY) continue;
+      for (const j of JOSEKI) {
+        const k = local.size;
+        // 걸침·침입(2번째 수)은 정석 책에서 내지 않는다: 빈 귀가 먼저이고, 걸침은 포석 점수가 맡음
+        if (k < 2 || k >= j.moves.length) continue;
+        let ok = true;
+        for (let i = 0; i < k && ok; i++) {
+          const want = i % 2 === 0 ? ownerA : opponent(ownerA as Stone);
+          const p = toBoard(...j.moves[i]);
+          if (local.get(p) !== want) ok = false;
+        }
+        if (!ok) continue;
+        const nextColor = k % 2 === 0 ? ownerA : opponent(ownerA as Stone);
+        if (nextColor !== me) continue;
+        const p = toBoard(...j.moves[k]);
+        if (game.at(p) === EMPTY && game.isLegal(p)) out.add(p);
+      }
+    }
+  }
+  return out;
 }

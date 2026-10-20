@@ -134,7 +134,7 @@ export class LessonPlayer {
     if (s.kind === 'find') {
       if (p == null) this.no('줄과 줄이 만나는 점을 눌러요');
       else if (this.found.has(p)) return;
-      else if (this.r.game.at(p) === EMPTY) this.no('백돌이 돌을 눌러요', p);
+      else if (this.r.game.at(p) === EMPTY) this.no('하양이 돌을 눌러요', p);
       else {
         const grp = this.r.groups.find((g) => g.includes(p));
         if (!grp) this.no(s.wrong, p);
@@ -178,8 +178,8 @@ export class LessonPlayer {
         this.freeCount++;
         if (this.freeCount >= s.rounds) this.ok(s.done);
         else {
-          this.feedback = { text: `백돌이가 놓았어요. 이제 다시 흑돌이 차례! — ${this.freeCount}번 했어요, ${s.rounds - this.freeCount}번 남았어요`, ok: true };
-          speak('백돌이가 놓았어요. 이제 다시 흑돌이 차례!');
+          this.feedback = { text: `하양이가 놓았어요. 이제 다시 까망이 차례! — ${this.freeCount}번 했어요, ${s.rounds - this.freeCount}번 남았어요`, ok: true };
+          speak('하양이가 놓았어요. 이제 다시 까망이 차례!');
         }
         this.rerender();
       }, 650);

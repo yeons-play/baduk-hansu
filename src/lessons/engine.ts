@@ -7,7 +7,7 @@ export const pt = ([x, y]: XY): number => toPoint(SIZE, x, y);
 
 /**
  * 배치로 판을 만든다. toMove를 주지 않으면 돌 수로 차례를 정한다(흑이 먼저 두므로, 흑·백 수가 같으면 흑 차례).
- * 흑돌이가 직접 놓아 보는 단계는 돌 수와 상관없이 흑 차례로 만든다.
+ * 까망이가 직접 놓아 보는 단계는 돌 수와 상관없이 흑 차례로 만든다.
  */
 export function buildGame(setup: Setup = {}, extraBlack: number[] = [], toMove?: Stone): Game {
   const board = new Uint8Array(SIZE * SIZE);
@@ -34,7 +34,7 @@ export interface Resolved {
   rings: number[];
 }
 
-/** 흑돌이가 직접 놓는 단계인지 (흑 차례로 판을 만든다) */
+/** 까망이가 직접 놓는 단계인지 (흑 차례로 판을 만든다) */
 function blackPlays(step: Step): boolean {
   return step.kind === 'move' || step.kind === 'find' || (step.kind === 'choice' && step.answer === 'legal');
 }

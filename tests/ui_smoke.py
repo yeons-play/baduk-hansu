@@ -85,7 +85,7 @@ with sync_playwright() as pw:
       ok('착수 후 AI가 응수 (돌 2개)', stones == 2, stones)
 
       # 같은 곳 두 번 누르기로 착수
-      # 백돌이가 무작위로 두므로 비어 있는 곳을 골라 시도
+      # 하양이가 무작위로 두므로 비어 있는 곳을 골라 시도
       for cx, cy in [(2, 2), (6, 6), (2, 6), (6, 2), (0, 8)]:
           tap_point(p, cx, cy)
           tap_point(p, cx, cy)

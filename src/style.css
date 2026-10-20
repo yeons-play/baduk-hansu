@@ -217,6 +217,7 @@ b { font-weight: 700; }
 .lesson.locked { color: #9A8B7E; }
 .lnum { width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--yellow); color: var(--yellow-ink); display: grid; place-items: center; font-family: var(--title); font-size: 1.2rem; flex: none; }
 .ltitle { flex: 1; font-family: var(--title); }
+.ltitle .lgoal { display: block; font-family: var(--body, inherit); font-size: 0.9rem; color: var(--sub); margin-top: 2px; }
 
 /* ── 시트 ── */
 .sheet-backdrop { position: fixed; inset: 0; background: rgba(58, 46, 38, 0.45); z-index: 60; }

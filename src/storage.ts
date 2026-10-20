@@ -128,6 +128,26 @@ export function resetLessons(): void {
   remove(KEY_LESSONS);
 }
 
+// ───────── 연습 문제 ─────────
+const KEY_PRACTICE = 'baduk-practice';
+
+export interface PracticeProgress {
+  v: 1;
+  /** 기술별로 끝까지 푼 판 수 */
+  done: Record<string, number>;
+}
+
+export function loadPractice(): PracticeProgress {
+  const p = read<PracticeProgress>(KEY_PRACTICE);
+  return p && p.done && typeof p.done === 'object' ? p : { v: 1, done: {} };
+}
+export function markPracticeDone(skill: string): PracticeProgress {
+  const p = loadPractice();
+  p.done[skill] = (p.done[skill] ?? 0) + 1;
+  write(KEY_PRACTICE, p);
+  return p;
+}
+
 // ───────── 백업 ─────────
 // baduk- 로 시작하는 저장값만 묶어서 JSON으로 내보내고 불러온다.
 const BACKUP_APP = 'baduk-hansu';

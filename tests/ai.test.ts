@@ -157,16 +157,17 @@ describe('집 짓는 바둑 AI 모양', () => {
     return n;
   };
 
-  it('초반 20수 동안 돌을 네모(2×2)로 뭉치지 않는다', () => {
+  it('초반 20수 동안 돌을 네모(2×2)로 뭉치지 않는다(잡기·살리기 수는 빼고)', () => {
     for (let i = 0; i < 10; i++) {
       const rand = rng(900 + i);
       const g = new Game({ size: 9, mode: 'normal' });
       for (let n = 0; n < 20 && !g.isOver; n++) {
+        const before = squares(g);
         const c = chooseMove(g, { level: (((i + n) % 2) + 2) as Level, rand });
         if (c.point === null) g.pass();
         else g.play(c.point);
+        if (c.reason !== 'capture' && c.reason !== 'escape') expect(squares(g)).toBeLessThanOrEqual(before);
       }
-      expect(squares(g)).toBe(0);
     }
   });
 
@@ -190,5 +191,35 @@ describe('집 짓는 바둑 AI 모양', () => {
     expect(c.point).not.toBeNull();
     const own = g.geo.neighbors[c.point!].filter((q) => g.at(q) === WHITE).length;
     expect(own).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('초보다운 실수(이상한 수는 두지 않음)', () => {
+  it('1단계도 첫 10수에 1선 같은 엉뚱한 수를 두지 않는다(잡기·살리기 수는 빼고)', () => {
+    for (let i = 0; i < 20; i++) {
+      const rand = rng(1300 + i);
+      const g = new Game({ size: 9, mode: 'normal' });
+      for (let n = 0; n < 10 && !g.isOver; n++) {
+        const c = chooseMove(g, { level: 1, rand });
+        if (c.point === null) g.pass();
+        else {
+          const [x, y] = [c.point % 9, Math.floor(c.point / 9)];
+          if (c.reason !== 'capture' && c.reason !== 'escape') expect(Math.min(x, y, 8 - x, 8 - y)).toBeGreaterThan(0);
+          g.play(c.point);
+        }
+      }
+    }
+  });
+
+  it('1단계는 가끔 잡을 수 있는 돌을 못 보고, 3단계는 언제나 잡는다', () => {
+    const g = Game.fromDiagram(['. . . . .', '. X O X .', '. . X . .', '. . . . .', '. . . . .'], BLACK, { mode: 'capture', captureTarget: 1 });
+    let missed = 0;
+    for (let i = 0; i < 200; i++) {
+      const c = chooseMove(g, { level: 1, rand: rng(50 + i) });
+      if (c.point !== toPoint(5, 2, 0)) missed++;
+      expect(chooseMove(g, { level: 3, rand: rng(50 + i) }).point).toBe(toPoint(5, 2, 0));
+    }
+    expect(missed).toBeGreaterThan(20);
+    expect(missed).toBeLessThan(160);
   });
 });

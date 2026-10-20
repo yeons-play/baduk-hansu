@@ -238,6 +238,7 @@ with sync_playwright() as pw:
       ok('6강: 잡아서 살리기', p.locator('.feedback.ok').count() == 1)
       nxt(); shot(p, '15-lesson6-ladder'); nxt(); choose(0); nxt()
       ok('6강 끝나면 7강으로', p.locator('.sheet [data-action="lesson-open"][data-id="7"]').count() == 1)
+      ok('6강 끝나면 연습 문제 버튼', p.locator('.sheet [data-action="practice-open"]').count() == 1)
       nxt_lesson()
       # 7강 이어 주기와 끊기
       nxt(); nxt(); t7(3, 3)
@@ -332,6 +333,31 @@ with sync_playwright() as pw:
       p.click('[data-action="finish-score"]'); p.wait_for_timeout(200)
       ok('끝내면 결과 시트', p.locator('.result-title').count() == 1)
       p.click('[data-action="go-home"]'); p.wait_for_timeout(150)
+
+      # 문제 놀이: 강을 끝낸 만큼 연습이 열리고, 5문제를 풀면 끝
+      p.evaluate("localStorage.setItem('baduk-lessons', JSON.stringify({v: 1, done: [1, 2, 3, 4, 5]}))")
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.tabbar [data-tab="puzzle"]'); p.wait_for_timeout(200)
+      ok('문제 놀이: 4·5강 연습만 열림', p.locator('[data-action="practice-open"]').count() == 2 and p.locator('.lessons .locked').count() == 2)
+      shot(p, '20-puzzle-list')
+      p.click('[data-action="practice-open"][data-i="1"]'); p.wait_for_timeout(300)
+      ok('연습 화면 제목', '연습' in p.locator('.bar h1').inner_text())
+      solved = 0
+      for k in range(5):
+          for q in range(49):
+              tap_point(p, q % 7, q // 7, size=7, board='.lesson-screen .board-svg')
+              if not p.locator('[data-action="lesson-next"]').is_disabled():
+                  break
+          if not p.locator('[data-action="lesson-next"]').is_disabled():
+              solved += 1
+              if k == 0: shot(p, '21-practice-solved')
+              p.click('[data-action="lesson-next"]'); p.wait_for_timeout(250)
+      ok('연습 5문제 다 풀기', solved == 5 and p.locator('.sheet .result-title').count() == 1, solved)
+      ok('연습은 강의 진도에 안 들어감', p.evaluate("JSON.parse(localStorage.getItem('baduk-lessons')).done.length") == 5)
+      ok('연습 횟수 저장', p.evaluate("JSON.parse(localStorage.getItem('baduk-practice')).done.capture") == 1)
+      p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(200)
+      ok('목록에 한 번 했어요 표시', '1번 했어요' in p.locator('.lessons').inner_text())
+      p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(200)
 
       # 보호자용 설정
       p.click('[data-action="settings"]'); p.wait_for_timeout(150)

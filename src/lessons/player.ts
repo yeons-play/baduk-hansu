@@ -246,7 +246,7 @@ export class LessonPlayer {
     return `<main class="screen game lesson-screen">
   <header class="bar">
     <button class="back" data-action="lesson-exit">${icon('chev')}뒤로</button>
-    <h1>${l.id}강 · ${esc(l.title)}<small>(${esc(l.term)})</small></h1>
+    <h1>${l.practice ? "연습" : `${l.id}강`} · ${esc(l.title)}<small>(${esc(l.term)})</small></h1>
     <button class="say" data-action="lesson-say" aria-label="다시 듣기">${icon('speaker')}</button>
   </header>
   <div class="dots" aria-label="${l.steps.length}단계 중 ${this.stepIdx + 1}단계">${dots}</div>

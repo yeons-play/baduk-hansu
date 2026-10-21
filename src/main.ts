@@ -152,16 +152,23 @@ function newGame(level: Level, target: Target) {
 
 function resumeGame(): boolean {
   const saved = loadGame();
-  if (!saved || saved.v !== 1) return false;
-  const g = new Game({ size: saved.size, mode: saved.mode, captureTarget: saved.captureTarget });
+  if (!saved || saved.v !== 1 || !Array.isArray(saved.moves)) return false;
+  let g: Game;
+  try {
+    g = new Game({ size: saved.size, mode: saved.mode, captureTarget: saved.captureTarget });
+  } catch {
+    clearGame(); // 망가진 저장값(판 크기 등)
+    return false;
+  }
   for (const m of saved.moves) {
-    const r = m < 0 ? g.pass() : g.play(m);
-    if (!r.ok) {
+    const r = typeof m !== 'number' ? null : m < 0 ? g.pass() : g.play(m);
+    if (!r?.ok) {
       clearGame();
       return false;
     }
   }
-  if (g.isOver) {
+  // 둘 다 넘겨 집 세기 화면에 있던 판은 그대로 이어 간다(앱을 닫아도 판이 사라지지 않게)
+  if (g.isOver && g.result?.reason !== 'score') {
     clearGame();
     return false;
   }
@@ -179,7 +186,9 @@ function resumeGame(): boolean {
 function persist() {
   const g = ui.game;
   if (!g) return;
-  if (g.isOver) {
+  // 끝난 판은 지운다. 단, 둘 다 넘겨 집을 세는 중이면 '끝낼래요'를 누를 때까지 남겨 둔다.
+  const scoring = g.result?.reason === 'score';
+  if (g.isOver && !scoring) {
     clearGame();
     return;
   }
@@ -190,6 +199,7 @@ function persist() {
     level: ui.level,
     captureTarget: g.rules.captureTarget,
     moves: g.moves.map((m) => (m.type === 'play' ? m.point : -1)),
+    ...(scoring ? { dead: ui.dead } : {}),
     savedAt: new Date().toISOString(),
   });
 }
@@ -263,13 +273,17 @@ function scheduleAI() {
 }
 
 /** 게임이 끝났을 때: 진짜 바둑에서 둘 다 넘겼으면 먼저 집을 세어 보여주고(더 두기 가능), 아니면 바로 결과 */
-function endOrScore() {
+function endOrScore(savedDead?: number[]) {
   const g = ui.game!;
   if (g.result?.reason === 'score') {
     ui.sheet = 'score';
     resetMarks();
-    ui.dead = estimateDead(g);
+    // 저장해 둔 죽은 돌이 있으면(앱을 닫았다 연 경우) 그대로, 없으면 앱이 짐작
+    ui.dead = savedDead
+      ? savedDead.filter((p) => Number.isInteger(p) && p >= 0 && p < g.geo.n && g.at(p) !== EMPTY)
+      : estimateDead(g);
     const r = g.settle(ui.dead);
+    persist();
     const s = r && r.reason === 'score' ? r.score : g.result.score;
     speak(
       `까망이는 ${s.blackTotal}점, 하양이는 덤까지 ${s.whiteTotal}점이에요. ${
@@ -290,6 +304,7 @@ function toggleDead(p: number | null) {
   const isDead = ui.dead.includes(p);
   ui.dead = isDead ? ui.dead.filter((q) => !grp.includes(q)) : [...ui.dead, ...grp];
   g.settle(ui.dead);
+  persist();
   sfx('stone');
   render();
 }
@@ -315,7 +330,7 @@ function historySummary(g: Game): string {
   if (res.reason === 'score') return `까망이 ${res.score.blackTotal}점 · 하양이 ${res.score.whiteTotal}점`;
   if (res.reason === 'resign') return res.winner === HUMAN ? '하양이 기권' : '까망이 그만하기';
   if (res.reason === 'capture') return `${g.rules.captureTarget}개 먼저 잡기`;
-  return '둘 다 넘김';
+  return '둘 다 넘김(비김)';
 }
 
 function finishGame() {
@@ -355,7 +370,7 @@ function finishGame() {
           ? { title: '아쉬워요!', body: `하양이 집이 조금 더 많았어요. ${detail}`, mood: 'oops', win: false }
           : { title: '비겼어요!', body: `점수가 똑같아요. ${detail}`, mood: 'happy', win: false };
   } else {
-    ui.result = { title: '비겼어요', body: '둘 다 돌을 잡지 못했어요.', mood: 'happy', win: false };
+    ui.result = { title: '비겼어요', body: '둘 다 더 놓을 곳이 없어서 끝났어요.', mood: 'happy', win: false };
   }
   // 복습용으로 끝난 판을 남긴다
   const id = Date.now();
@@ -525,6 +540,9 @@ function homeHTML(): string {
 function gameHTML(): string {
   const g = ui.game!;
   const humanTurn = g.toMove === HUMAN && !ui.aiThinking && !g.isOver;
+  // 따내기 바둑에는 보통 넘기기가 없지만, 놓을 곳이 하나도 없으면 넘길 수 있게 한다(갇혀서 그만하기밖에 없는 일 방지)
+  const canPass = humanTurn && (g.rules.mode === 'normal' || g.legalMoves().length === 0);
+  const stuck = canPass && g.rules.mode === 'capture';
   const canUndo = g.moves.some((m) => m.color === HUMAN) && !ui.aiThinking;
   const status =
     ui.preview != null
@@ -538,6 +556,8 @@ function gameHTML(): string {
             ? `${icon('bulb')}<span>${esc(ui.hintText)}</span>`
             : g.isOver
               ? '<span>다 두었어요</span>'
+              : stuck
+              ? '<span>놓을 곳이 없어요. 넘기기를 눌러요</span>'
               : humanTurn
               ? '<span>놓고 싶은 곳을 눌러요</span>'
               : '<span class="thinking">하양이가 생각하고 있어요…</span>'
@@ -576,12 +596,12 @@ function gameHTML(): string {
           : `<p class="goal">먼저 돌 <b>${g.rules.captureTarget}개</b>를 잡으면 이겨요 · 숫자는 잡은 돌</p>`
       }
       ${status}
-      <nav class="tools ${g.rules.mode === 'normal' ? 'five' : ''}" aria-label="놀이 도구">
+      <nav class="tools ${g.rules.mode === 'normal' || stuck ? 'five' : ''}" aria-label="놀이 도구">
         <button data-action="hint" ${humanTurn ? '' : 'disabled'}><span class="tool-ic yellow">${icon('bulb')}</span>도와줘</button>
         <button data-action="undo" ${canUndo ? '' : 'disabled'}><span class="tool-ic sky">${icon('undo')}</span>되돌리기</button>
         ${
-          g.rules.mode === 'normal'
-            ? `<button data-action="ask-pass" ${humanTurn ? '' : 'disabled'}><span class="tool-ic mint">${icon('skip')}</span>넘기기</button>`
+          g.rules.mode === 'normal' || stuck
+            ? `<button data-action="ask-pass" ${canPass ? '' : 'disabled'}><span class="tool-ic mint">${icon('skip')}</span>넘기기</button>`
             : ''
         }
         <button data-action="rules"><span class="tool-ic mint">${icon('help')}</span>규칙</button>
@@ -721,7 +741,7 @@ function sheetHTML(): string {
     const normal = ui.mode === 'normal';
     const savedName = saved?.mode === 'normal' ? '진짜 바둑' : '따내기 바둑';
     body = `<h2>${normal ? '하양이와 진짜 바둑' : '하양이와 따내기 바둑'}</h2>
-    ${saved ? `<button class="btn primary full big" data-action="resume">하던 ${savedName} 이어서 하기</button><div class="or">또는 새로 시작해요${saved.mode !== ui.mode ? ' (하던 판은 지워져요)' : ''}</div>` : ''}
+    ${saved ? `<button class="btn primary full big" data-action="resume">하던 ${savedName} 이어서 하기</button><div class="or">또는 새로 시작해요 (하던 ${savedName} 판은 지워져요)</div>` : ''}
     <p class="sheet-label">하양이 실력</p>
     <div class="chips" role="radiogroup" aria-label="하양이 실력">
       ${([1, 2, 3] as Level[])
@@ -775,7 +795,11 @@ function sheetHTML(): string {
     </ol>
     <button class="btn primary full big" data-action="close-rules">알았어요!</button>`;
   } else if (ui.sheet === 'pass') {
-    body = `<h2>차례를 넘길까요?</h2><p class="sheet-p">더 놓을 곳이 없을 때 넘겨요. 하양이도 넘기면 바둑이 끝나고 집을 세어요.</p>
+    body = `<h2>차례를 넘길까요?</h2><p class="sheet-p">${
+      ui.game?.rules.mode === 'capture'
+        ? '놓을 곳이 없으면 넘겨요. 하양이도 넘기면 비겨요.'
+        : '더 놓을 곳이 없을 때 넘겨요. 하양이도 넘기면 바둑이 끝나고 집을 세어요.'
+    }</p>
     <div class="row2"><button class="btn ghost" data-action="close-sheet">더 둘래요</button><button class="btn primary" data-action="pass">넘길래요</button></div>`;
   } else if (ui.sheet === 'score' && ui.game?.result?.reason === 'score') {
     const g = ui.game;
@@ -1040,6 +1064,7 @@ app.addEventListener('click', (ev) => {
       const g = ui.game;
       ui.sheet = null;
       if (!g || g.isOver || ui.aiThinking || g.toMove !== HUMAN) break;
+      if (g.rules.mode === 'capture' && g.legalMoves().length) break; // 따내기 바둑은 놓을 곳이 없을 때만
       g.pass();
       resetMarks();
       persist();
@@ -1058,10 +1083,17 @@ app.addEventListener('click', (ev) => {
     case 'target':
       ui.target = Number(el.dataset.target) as Target;
       break;
-    case 'resume':
-      if (resumeGame()) enterGame();
-      else showToast('이어서 할 판을 찾지 못했어요');
+    case 'resume': {
+      const saved = loadGame();
+      if (!resumeGame()) {
+        showToast('이어서 할 판을 찾지 못했어요');
+        break;
+      }
+      enterGame();
+      // 집 세기 화면에서 앱을 닫았던 판: 고른 죽은 돌 그대로 집 세기 화면을 다시 연다
+      if (ui.game?.isOver) return endOrScore(Array.isArray(saved?.dead) ? saved.dead : undefined);
       break;
+    }
     case 'start':
     case 'again':
       newGame(ui.level, ui.target);

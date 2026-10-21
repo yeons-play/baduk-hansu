@@ -331,6 +331,13 @@ with sync_playwright() as pw:
       tap_point(p, 3, 4, size=9, board='.score-board .board-svg')
       ok('돌을 누르면 죽은 돌로 바뀌고 점수가 다시 계산됨', '까망이 9개' in p.locator('.sheet').inner_text() and '36' not in p.locator('.score-table').inner_text(), p.locator('.score-table').inner_text())
       shot(p, '19b-score-dead')
+      # 집 세기 화면에서 앱을 닫았다 열어도 판과 고른 죽은 돌이 남아 있음
+      p.reload(); p.wait_for_timeout(400)
+      ok('집 세기 중 앱을 닫아도 하던 판이 남음', '하던' in p.locator('.play-card.normal').inner_text())
+      p.click('.play-card.normal'); p.wait_for_timeout(150)
+      ok('새로 시작하면 하던 판이 지워진다고 안내', '지워져요' in p.locator('.sheet').inner_text())
+      p.click('[data-action="resume"]'); p.wait_for_timeout(400)
+      ok('이어서 하면 집 세기 화면 + 고른 죽은 돌 그대로', p.locator('.score-table').count() == 1 and '까망이 9개' in p.locator('.sheet').inner_text(), p.locator('.sheet').inner_text() if p.locator('.sheet').count() else '')
       p.locator('.score-board').scroll_into_view_if_needed(); p.wait_for_timeout(150)
       tap_point(p, 3, 4, size=9, board='.score-board .board-svg')
       ok('다시 누르면 산 돌로 돌아옴', '36' in p.locator('.score-table').inner_text() and '52' in p.locator('.score-table').inner_text())
@@ -385,6 +392,27 @@ with sync_playwright() as pw:
       ok('죽이기 5문제 다 풀기', solved == 5 and p.locator('.sheet .result-title').count() == 1, solved)
       p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(200)
       p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(200)
+
+      # 따내기 바둑에서 까망이가 놓을 곳이 없으면(모든 빈 점이 자살수) 넘기기 버튼이 생김
+      eyes = {6, 8, 16, 18}
+      moves = []
+      for p_ in range(25):
+          if p_ in eyes: continue
+          moves += [-1, p_]
+      p.evaluate("m => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, mode: 'capture', size: 5, level: 1, captureTarget: 1, moves: m, savedAt: ''}))", moves)
+      p.evaluate("localStorage.setItem('baduk-seen-capture-rules', 'true')")
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.play-card.capture'); p.wait_for_timeout(150)
+      p.click('[data-action="resume"]'); p.wait_for_timeout(300)
+      ok('따내기 바둑: 놓을 곳이 없으면 넘기기 버튼', p.locator('[data-action="ask-pass"]').count() == 1 and '놓을 곳이 없어요' in p.locator('.guide').inner_text())
+      shot(p, '21b-capture-stuck')
+      p.click('[data-action="ask-pass"]'); p.wait_for_timeout(150)
+      ok('따내기 바둑 넘기기 안내 문구', '비겨요' in p.locator('.sheet').inner_text())
+      p.click('[data-action="pass"]'); p.wait_for_timeout(1200)
+      ok('넘긴 뒤 하양이가 이어 둠', p.locator('.result-title').count() == 1 or p.evaluate("JSON.parse(localStorage.getItem('baduk-current-game')).moves.length") > len(moves) + 1)
+      if p.locator('[data-action="go-home"]').count(): p.click('[data-action="go-home"]')
+      else: p.click('[data-action="exit-game"]')
+      p.wait_for_timeout(200)
 
       # 하양이 기권: 까망이 돌만 판의 절반 넘게(위 다섯 줄) 있는 9줄 판(하양이는 계속 넘김) → 두 번 더 두면 하양이가 기권
       moves = []

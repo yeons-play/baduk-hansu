@@ -1,7 +1,7 @@
 // 끝난 판에서 '죽은 돌' 짐작 — 규칙이 아니라 짐작이라서 AI 쪽에 둔다(사람이 집 세기 화면에서 고칠 수 있음).
 // 방법: 지금 판에서 양쪽이 무작위로(자기 눈은 메우지 않고) 끝까지 두어 보기를 여러 번 한다.
-// 어떤 돌 무리가 대부분의 판에서 상대 땅이 되면 죽은 돌로 본다. 합법 판단은 규칙 엔진(play)에만 맡긴다.
-import { BLACK, EMPTY, Game, type Stone } from '../rules';
+// 어떤 돌 무리가 대부분의 판에서 상대 땅이 되면 죽은 돌로 본다(빅은 inSeki로 따로 살림). 합법 판단은 규칙 엔진(play)에만 맡긴다.
+import { BLACK, EMPTY, Game, WHITE, type Stone } from '../rules';
 
 export interface DeadOptions {
   playouts?: number;
@@ -66,9 +66,35 @@ export function estimateDead(game: Game, opts: DeadOptions = {}): number[] {
     const grp = game.group(p).stones;
     grp.forEach((q) => (seen[q] = 1));
     const avg = grp.reduce((a, q) => a + keep[q], 0) / grp.length / N;
-    if (avg < threshold) dead.push(...grp);
+    if (avg < threshold && !inSeki(game, p)) dead.push(...grp);
   }
   return dead;
+}
+
+/**
+ * 빅(세키)인가: 무작위로 두어 보기는 빅의 공배를 아무렇게나 메워 스스로 단수가 되므로 빅 무리를 죽은 돌로 잘못 본다.
+ * 그래서 따로 확인한다 — 이 무리의 숨구멍 중 하나 이상을 이웃한 상대 무리와 함께 쓰고,
+ * 모든 숨구멍이 '어느 쪽이 메워도 스스로 단수(잡지도 못함)'이거나 둘 수 없는 자리이면 빅으로 본다.
+ * 상대와 함께 쓰는 숨구멍이 없는 무리(예: 두 칸짜리 눈 하나)는 빅이 아니다.
+ */
+export function inSeki(game: Game, p: number): boolean {
+  const color = game.at(p);
+  if (color === EMPTY) return false;
+  const me = color as Stone;
+  const opp: Stone = me === BLACK ? WHITE : BLACK;
+  const { liberties } = game.group(p);
+  if (!liberties.length) return false;
+  const shared = liberties.some((q) => game.geo.neighbors[q].some((r) => game.at(r) === opp));
+  if (!shared) return false;
+  return liberties.every((q) => !safeFill(game, q, me) && !safeFill(game, q, opp));
+}
+
+/** c가 q에 두면 잡지도 못하면서 스스로 단수(숨구멍 1개 이하)가 되지 않는가 = 메워도 괜찮은 자리 */
+function safeFill(game: Game, q: number, c: Stone): boolean {
+  const g = new Game({ size: game.size, mode: 'normal', komi: 0 }, { board: game.board(), toMove: c });
+  const r = g.play(q);
+  if (!r.ok) return false;
+  return r.captured.length > 0 || g.group(q).liberties.length >= 2;
 }
 
 /** 흑·백 중 죽은 돌 수 */

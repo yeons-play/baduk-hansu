@@ -182,7 +182,9 @@ export class LessonPlayer {
       this.rerender();
       this.timer = window.setTimeout(() => {
         const c = chooseMove(g, { level: 1 });
+        // 하양이가 놓을 곳이 없으면 넘긴다(넘기지 않으면 까망이가 하양이 차례에 두게 됨)
         if (c.point != null) g.play(c.point);
+        else g.pass();
         sfx('stone');
         this.busy = false;
         this.freeCount++;

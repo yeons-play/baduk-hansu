@@ -6,7 +6,7 @@ import { speak } from '../speech';
 import { renderBoard } from '../ui/board';
 import { icon } from '../ui/icons';
 import type { Lesson, Step } from './data';
-import { buildGame, fill, pt, resolve, type Resolved } from './engine';
+import { buildGame, fill, resolve, type Resolved } from './engine';
 
 export class LessonPlayer {
   stepIdx = 0;
@@ -224,7 +224,7 @@ export class LessonPlayer {
           ? []
           : this.r.rings.filter((p) => !this.found.has(p)),
       goods: s.kind === 'liberties' || s.kind === 'find' || (s.kind === 'territory' && !this.done) ? [...this.found] : [],
-      crosses: (s.crosses ?? []).map(pt),
+      crosses: this.r.crosses,
       miss: this.miss,
       lastMove: s.kind === 'free' ? lastPlay(game) : s.kind === 'move' ? this.moved : null,
     });

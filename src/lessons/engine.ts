@@ -42,6 +42,8 @@ export interface Resolved {
   score: AreaScore;
   /** 동그라미로 보여줄 점 */
   rings: number[];
+  /** '아니에요' 엑스로 보여줄 점(이 강의 판 크기로 바꾼 것) */
+  crosses: number[];
 }
 
 /** 이 단계에서 누구 차례로 판을 만들지 */
@@ -152,7 +154,7 @@ export function resolve(step: Step, size = SIZE): Resolved {
     ...(step.probe ? [P(step.probe)] : []),
     ...(step.showLibs && libsList ? libsList : []),
   ];
-  return { game, targets, groups, answer, libs, score, rings };
+  return { game, targets, groups, answer, libs, score, rings, crosses: (step.crosses ?? []).map(P) };
 }
 
 /** 자리표시를 엔진 값으로 바꾼다: {libs} 숨구멍, {area}·{warea} 까망이·하양이 집, {stones} 까망이 돌, {total} 까망이 돌+집 */

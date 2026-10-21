@@ -128,6 +128,38 @@ export function resetLessons(): void {
   remove(KEY_LESSONS);
 }
 
+// ───────── 끝난 판 기록(복습용) ─────────
+const KEY_HISTORY = 'baduk-history';
+/** 기기에 남겨 두는 끝난 판 수 */
+export const HISTORY_MAX = 20;
+
+export interface FinishedGame {
+  v: 1;
+  /** 고유 번호(끝난 시각 밀리초) */
+  id: number;
+  mode: GameMode;
+  size: number;
+  level: Level;
+  captureTarget: number;
+  /** 착수 좌표, 패스는 -1 (기권은 결과에만) */
+  moves: number[];
+  outcome: 'win' | 'loss' | 'draw';
+  /** 어떻게 끝났나: capture 먼저 잡음, score 집 세기, resign 기권, no-capture 둘 다 넘김 */
+  reason: string;
+  /** 결과 한 줄(예: '까망이 45점, 하양이 38점') */
+  summary: string;
+  endedAt: string;
+}
+
+export function loadHistory(): FinishedGame[] {
+  const h = read<FinishedGame[]>(KEY_HISTORY);
+  return Array.isArray(h) ? h.filter((g) => g && g.v === 1 && Array.isArray(g.moves)) : [];
+}
+/** 새 판을 맨 앞에 넣고 오래된 판은 지운다 */
+export function addHistory(g: FinishedGame): void {
+  write(KEY_HISTORY, [g, ...loadHistory().filter((h) => h.id !== g.id)].slice(0, HISTORY_MAX));
+}
+
 // ───────── 연습 문제 ─────────
 const KEY_PRACTICE = 'baduk-practice';
 

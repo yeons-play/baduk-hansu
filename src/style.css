@@ -362,3 +362,23 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
   .tools.five button { font-size: 0.8rem; white-space: nowrap; }
   .tools.five .tool-ic { width: 2.6rem; height: 2.6rem; }
 }
+
+/* 복습 */
+.section-title { font-family: var(--title); font-weight: 400; font-size: 1.4rem; margin-top: 8px; }
+.section-sub { color: var(--sub); font-size: 1rem; margin-top: -6px; }
+.rv-bar { display: flex; align-items: center; gap: 8px; }
+.rv-btn { flex: none; width: 3.6rem; height: 3.6rem; border-radius: 50%; background: var(--card); border: 2px solid var(--line); font-size: 1.3rem; color: var(--ink); box-shadow: 0 3px 0 var(--line); }
+.rv-btn:disabled { opacity: 0.35; box-shadow: none; }
+.rv-count { flex: 1; text-align: center; font-family: var(--title); font-size: 1.2rem; color: var(--sub); }
+.rv-count b { color: var(--ink); font-size: 1.5rem; font-weight: 400; }
+.rv-seek { width: 100%; height: 44px; accent-color: var(--primary); touch-action: pan-x; }
+.rv-dyn { display: flex; flex-direction: column; gap: 12px; }
+.review-card p { font-size: 1.15rem; line-height: 1.6; }
+.review-card p.small { font-size: 1rem; color: var(--sub); margin-top: 6px; }
+.review-card .kicker.warn { font-family: var(--title); font-size: 1rem; color: #B83E57; margin-bottom: 4px; }
+.rv-count { white-space: nowrap; }
+@media (max-width: 520px) {
+  .rv-btn { width: 3.1rem; height: 3.1rem; font-size: 1.1rem; }
+  .rv-bar { gap: 6px; }
+}
+.rv-dyn .row2 .btn { white-space: nowrap; padding-left: 8px; padding-right: 8px; }

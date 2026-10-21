@@ -401,7 +401,32 @@ with sync_playwright() as pw:
           tap_point(p, x, y); p.click('[data-action="confirm"]'); p.wait_for_timeout(2500)
       ok('크게 지면 하양이가 기권 → 이겼어요', p.locator('.result-title').count() == 1 and '기권' in p.locator('.sheet').inner_text(), p.locator('.sheet').inner_text() if p.locator('.sheet').count() else '')
       shot(p, '22-ai-resign')
-      if p.locator('[data-action="go-home"]').count(): p.click('[data-action="go-home"]'); p.wait_for_timeout(150)
+      ok('결과 화면에 복습 버튼', p.locator('.sheet [data-action="review-open"]').count() == 1)
+      p.click('.sheet [data-action="review-open"]'); p.wait_for_timeout(300)
+      ok('방금 판 복습 화면(아래 탭 숨김)', p.locator('.review-screen').count() == 1 and p.locator('.tabbar').count() == 0)
+      p.click('[data-action="rv-last"]'); p.wait_for_timeout(150)
+      ok('끝으로 가면 마지막 수', p.locator('.rv-count b').inner_text() == p.locator('.rv-seek').get_attribute('max'))
+      p.click('[data-action="tab"][data-tab="record"]'); p.wait_for_timeout(200)
+      ok('기록 탭에 지난 판 목록', p.locator('[data-action="review-open"]').count() >= 1)
+
+      # 복습: 놓친 장면(잡을 수 있었는데 다른 곳에 둠) — 5줄 따내기 바둑 기록을 직접 넣고 확인
+      P = lambda x, y: y * 5 + x
+      rec = {'v': 1, 'id': 1, 'mode': 'capture', 'size': 5, 'level': 1, 'captureTarget': 3,
+             'moves': [P(1, 2), P(4, 4), P(2, 1), P(4, 3), P(3, 2), P(2, 2), P(0, 0)],
+             'outcome': 'loss', 'reason': 'resign', 'summary': '까망이 그만하기', 'endedAt': '2026-10-21T02:00:00.000Z'}
+      p.evaluate("r => localStorage.setItem('baduk-history', JSON.stringify([r]))", rec)
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.tabbar [data-tab="record"]'); p.wait_for_timeout(200)
+      ok('기록 목록에 놓친 장면 수', '놓친 장면 1개' in p.locator('.lessons').inner_text())
+      p.click('[data-action="review-open"][data-id="1"]'); p.wait_for_timeout(300)
+      p.click('[data-action="rv-mistake"][data-dir="1"]'); p.wait_for_timeout(200)
+      ok('다음 장면 → 잡을 수 있었어요 + 5강 다시 보기', '잡을 수 있었어요' in p.locator('.review-card').inner_text() and p.locator('.side [data-action="lesson-open"][data-id="5"]').count() == 1)
+      ok('6수까지 둔 판에서 장면 표시', p.locator('.rv-count b').inner_text() == '6')
+      shot(p, '24-review-mistake')
+      p.locator('.rv-seek').fill('2'); p.wait_for_timeout(150)
+      ok('슬라이더로 2수까지', p.locator('.rv-count b').inner_text() == '2')
+      p.click('[data-action="tab"][data-tab="record"]'); p.wait_for_timeout(150)
+      p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(150)
 
       # 보호자용 설정
       p.click('[data-action="settings"]'); p.wait_for_timeout(150)

@@ -179,3 +179,25 @@ describe('읽어 주기 문장', () => {
     expect(toSpeech('**점(교차점)**이라고 해요.')).toBe('점이라고 해요. 바둑 말로는 교차점이라고 해요.');
   });
 });
+
+describe('강의 엑스 표시(아니에요)', () => {
+  it('엑스는 그 강의 판 안의 빈 점에 그려진다(판 크기로 좌표 변환)', () => {
+    for (const l of LESSONS)
+      for (const s of l.steps) {
+        if (!s.crosses) continue;
+        const r = resolve(s, l.size);
+        expect(r.crosses).toEqual(s.crosses.map(([x, y]) => y * l.size + x));
+        for (const p of r.crosses) expect(r.game.at(p)).toBe(0);
+      }
+  });
+
+  it('3강: 대각선 엑스 네 개는 까망이 돌의 비스듬한 네 곳', () => {
+    const l = LESSONS[2];
+    const s = l.steps.find((x) => x.crosses?.length === 4)!;
+    const r = resolve(s, l.size);
+    const stone = [...Array(l.size * l.size).keys()].find((p) => r.game.at(p) !== 0)!;
+    const [sx, sy] = [stone % l.size, Math.floor(stone / l.size)];
+    const diag = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => (sy + dy) * l.size + sx + dx);
+    expect([...r.crosses].sort((a, b) => a - b)).toEqual(diag.sort((a, b) => a - b));
+  });
+});

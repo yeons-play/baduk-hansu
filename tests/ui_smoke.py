@@ -367,6 +367,23 @@ with sync_playwright() as pw:
       ok('목록에 한 번 했어요 표시', '1번 했어요' in p.locator('.lessons').inner_text())
       p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(200)
 
+      # 하양이 기권: 까망이 돌만 판의 절반 넘게(위 다섯 줄) 있는 9줄 판(하양이는 계속 넘김) → 두 번 더 두면 하양이가 기권
+      moves = []
+      for p_ in range(45):
+          if p_ in (10, 13, 16): continue  # 눈 세 개(눈 없는 벽은 실제로 살아 있지 않음)
+          moves += [p_, -1]
+      moves = moves[:-1]
+      p.evaluate("m => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, mode: 'normal', size: 9, level: 1, captureTarget: 1, moves: m.concat([-1]), savedAt: ''}))", moves)
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.play-card.normal'); p.wait_for_timeout(150)
+      p.click('[data-action="resume"]'); p.wait_for_timeout(300)
+      for x, y in [(2, 6), (6, 6), (4, 7)]:
+          if p.locator('.result-title').count(): break
+          tap_point(p, x, y); p.click('[data-action="confirm"]'); p.wait_for_timeout(2500)
+      ok('크게 지면 하양이가 기권 → 이겼어요', p.locator('.result-title').count() == 1 and '기권' in p.locator('.sheet').inner_text(), p.locator('.sheet').inner_text() if p.locator('.sheet').count() else '')
+      shot(p, '22-ai-resign')
+      if p.locator('[data-action="go-home"]').count(): p.click('[data-action="go-home"]'); p.wait_for_timeout(150)
+
       # 보호자용 설정
       p.click('[data-action="settings"]'); p.wait_for_timeout(150)
       p.click('[data-action="rate"][data-rate="slow"]'); p.wait_for_timeout(100)

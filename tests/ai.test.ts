@@ -317,3 +317,29 @@ describe('기본 정석(13줄)', () => {
     expect(josekiMoves(g, BLACK).size).toBe(0);
   });
 });
+
+describe('넘기기 판단', () => {
+  it('살릴 수 없는 단수 돌이 있어도 빈 곳이 넓으면 넘기지 않는다(3단계)', () => {
+    // 실제 대국 화면에서 옮긴 판: 하양이 가운데 무리가 단수라 모든 수가 똑같이 깎여 계속 넘기던 버그
+    const g = Game.fromDiagram(
+      [
+        '. . . . . X . O O X . . .',
+        '. . . . . X . O X X X . .',
+        '. . X X X O O O O X X . .',
+        '. . . O X X X X X . . X .',
+        '. . X X X . . . X X . X X',
+        '. . X O O . . . . X . . X',
+        '. . X X O . O X X X X X O',
+        '. . X . X . X X O O X X .',
+        '. O X . X . X O O O O X .',
+        '. X X X . X . O O X X . .',
+        '. . X . . . X O X X . . .',
+        '. O X X X X X O O X . . O',
+        '. O . . . . . X X X . . .',
+      ],
+      WHITE,
+      { mode: 'normal' },
+    );
+    for (let i = 0; i < 20; i++) expect(chooseMove(g, { level: 3, rand: rng(300 + i) }).point).not.toBeNull();
+  });
+});

@@ -196,10 +196,17 @@ function evaluate(
       }
     }
 
-    // 3단계: 둔 뒤 상대가 바로 따낼 수 있는 내 돌이 남는지
+    // 3단계: 이 수 때문에 새로 단수가 되는 내 돌이 있는지.
+    // 두기 전부터 단수였던 돌(살릴 수 없으면 어느 수를 둬도 그대로)은 세지 않는다 — 세면 모든 수가 똑같이 깎여
+    // '둘 곳이 없다'고 착각해 계속 넘기게 된다. 그런 돌을 살리는 수는 위의 살리기 점수가 맡는다.
     if (level === 3 && !game.isOver) {
-      const danger = atariGroups(game, me);
-      for (const rep of danger) score -= 40 + 8 * game.group(rep).stones.length;
+      const before = new Set<number>();
+      for (const rep of myAtari) game.group(rep).stones.forEach((q) => before.add(q));
+      for (const rep of atariGroups(game, me)) {
+        const grp = game.group(rep).stones;
+        if (grp.some((q) => before.has(q)) && !grp.includes(p)) continue;
+        score -= 40 + 8 * grp.length;
+      }
     }
   } finally {
     game.undo();

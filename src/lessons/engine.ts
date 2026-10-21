@@ -1,6 +1,7 @@
 // 강의 단계를 규칙 엔진 위에서 해석한다. 정답은 모두 엔진이 계산.
 import { BLACK, EMPTY, WHITE, Game, opponent, toPoint, type AreaScore, type Stone } from '../engine/rules';
 import type { MoveGoal, Setup, Step, XY } from './data';
+import { vitalPoints } from './life';
 
 /** 강의 바둑판 기본 크기 */
 export const SIZE = 9;
@@ -119,6 +120,9 @@ export function resolve(step: Step, size = SIZE): Resolved {
     if (step.goal === 'cut') {
       if (!step.cut) throw new Error('cut 단계에는 cut 두 점이 필요');
       targets = cutPoints(step, size, P(step.cut[0]), P(step.cut[1])).filter((p) => game.isLegal(p));
+    } else if (step.region && (step.goal === 'live' || step.goal === 'kill')) {
+      if (!step.libsOf) throw new Error('사활 단계에는 libsOf(무리의 돌 하나)가 필요');
+      targets = vitalPoints(game, P(step.libsOf), step.region.map(P), step.goal);
     } else {
       const lo = step.libsOf ? P(step.libsOf) : null;
       const jo = step.join ? P(step.join) : null;

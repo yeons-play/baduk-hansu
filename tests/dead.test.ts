@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { BLACK, WHITE, Game, toPoint } from '../src/engine/rules';
-import { chooseMove } from '../src/engine/ai/beginner';
 import { estimateDead } from '../src/engine/ai/dead';
 
 function rng(seed: number) {
@@ -100,19 +99,23 @@ describe('죽은 돌 짐작', () => {
     expect(dead).not.toContain(toPoint(9, 1, 0));
   });
 
-  it('하양이끼리 끝까지 둔 판(죽은 돌을 다 잡고 끝냄)에서는 거의 짐작하지 않는다', () => {
-    let wrong = 0;
-    for (let i = 0; i < 6; i++) {
-      const rand = rng(40 + i);
-      const g = new Game({ size: 9, mode: 'normal' });
-      while (!g.isOver) {
-        const c = chooseMove(g, { level: 3, rand });
-        if (c.point === null) g.pass();
-        else g.play(c.point);
-      }
-      wrong += estimateDead(g, { rand }).length;
-    }
-    // 애매한 모양(한 수 더 둬 봐야 아는 무리)은 짐작이 틀릴 수 있다 — 그래서 집 세기 화면에서 사람이 눌러 고친다
-    expect(wrong).toBeLessThanOrEqual(12);
+  it('경계가 다 정해지고 침입한 돌이 없는 판에서는 죽은 돌이 없다', () => {
+    // (전에는 '하양이끼리 끝까지 둔 판'으로 시험했지만, 사석을 들어내는 규칙이 되면서 하양이가 죽은 돌을 남긴 채
+    //  끝내는 일이 생겨 정답을 알 수 없는 시험이 됨 → 정답이 분명한 판으로 바꿈)
+    const g = Game.fromDiagram(
+      [
+        '. . . . X O . . .',
+        '. . . . X O . . .',
+        '. . . . X O . . .',
+        '. . . X X O O . .',
+        '. . . X . X O . .',
+        '. . . X X X O . .',
+        '. . . . X O O . .',
+        '. . . . X O . . .',
+        '. . . . X O . . .',
+      ],
+      BLACK,
+    );
+    for (let i = 0; i < 5; i++) expect(estimateDead(g, { rand: rng(60 + i) })).toEqual([]);
   });
 });

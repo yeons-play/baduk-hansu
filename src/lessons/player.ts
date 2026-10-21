@@ -23,17 +23,26 @@ export class LessonPlayer {
   feedback: { text: string; ok: boolean } | null = null;
   chosen: number | null = null;
   miss: number | null = null;
+  /** 이 단계에서 틀린 횟수(줄 밖을 누른 것은 빼고) */
+  misses = 0;
 
   constructor(
     readonly lesson: Lesson,
     private rerender: () => void,
+    /** 연습에서 같은 문제를 두 번 틀렸을 때(핵심 그림 보여 주기) */
+    private onStuck?: (step: Step) => void,
   ) {
     this.enter(0);
   }
 
-  /** 이 강의 바둑판 줄 수 */
+  /** 지금 단계의 바둑판 줄 수(단계마다 다를 수 있음: 놓친 장면 문제) */
   get size(): number {
-    return this.lesson.size;
+    return this.step.size ?? this.lesson.size;
+  }
+
+  /** 지금 단계를 한 번에 맞혔나 */
+  get firstTry(): boolean {
+    return this.done && this.misses === 0;
   }
 
   get step(): Step {
@@ -57,6 +66,7 @@ export class LessonPlayer {
     this.feedback = null;
     this.chosen = null;
     this.miss = null;
+    this.misses = 0;
     speak(this.text());
   }
 
@@ -93,6 +103,11 @@ export class LessonPlayer {
     this.miss = miss;
     sfx('wrong');
     speak(this.feedback.text);
+    // 점을 잘못 고른 것만 센다(줄 밖 누르기는 실수가 아님). 연습에서 두 번째로 틀리면 핵심 그림
+    if (miss != null || this.step.kind === 'choice') {
+      this.misses++;
+      if (this.misses === 2 && this.lesson.practice) this.onStuck?.(this.step);
+    }
   }
 
   tapPoint(p: number | null) {

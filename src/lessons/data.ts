@@ -16,6 +16,10 @@ export interface Setup {
 interface Base {
   text: string;
   setup?: Setup;
+  /** 이 단계만 판 크기가 다를 때(놓친 장면 문제처럼). 없으면 강의의 size */
+  size?: number;
+  /** 지난 판에서 놓친 장면으로 만든 문제면 그 장면 번호(한 번에 맞히면 목록에서 뺌) */
+  sceneId?: string;
   /** 점선 동그라미로 강조할 점 */
   rings?: XY[];
   /** '아니에요' 표시 */
@@ -97,7 +101,7 @@ export interface Lesson {
   size: number;
   steps: Step[];
   /** 연습 문제 판이면 그 기술 이름(강의 진도에 넣지 않음) */
-  practice?: 'find' | 'capture' | 'escape' | 'mix' | 'live' | 'kill';
+  practice?: 'find' | 'capture' | 'escape' | 'mix' | 'live' | 'kill' | 'scene';
 }
 
 export const STARS: XY[] = [

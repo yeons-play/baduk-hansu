@@ -34,11 +34,21 @@ export interface ReplaySpec {
   captureTarget: number;
   /** 착수 좌표, 넘기기는 -1 */
   moves: number[];
+  /** 빈 판이 아닌 배치에서 시작한 판이면 그 배치 */
+  setup?: { board: ArrayLike<number>; toMove: Stone };
+}
+
+/** 기록의 첫 판(빈 판 또는 출발 배치) */
+function start(spec: ReplaySpec): Game {
+  return new Game(
+    { size: spec.size, mode: spec.mode, captureTarget: spec.captureTarget },
+    spec.setup ? { board: spec.setup.board, toMove: spec.setup.toMove } : undefined,
+  );
 }
 
 /** 기록을 처음부터 k수까지 다시 둔 판 */
 export function replay(spec: ReplaySpec, k = spec.moves.length): Game {
-  const g = new Game({ size: spec.size, mode: spec.mode, captureTarget: spec.captureTarget });
+  const g = start(spec);
   for (let i = 0; i < k && i < spec.moves.length; i++) {
     const m = spec.moves[i];
     const r = m < 0 ? g.pass() : g.play(m);
@@ -65,10 +75,23 @@ function fresh(now: number[][], before: Set<number>): number[][] {
   return now.filter((grp) => grp.some((s) => !before.has(s)));
 }
 
+/** 잘한 수: 하양이 돌을 잡음(5강), 단수인 내 돌을 살림(6강) */
+export type GoodKind = 'capture' | 'escape';
+export interface Good {
+  index: number;
+  kind: GoodKind;
+}
+
 export function findMistakes(spec: ReplaySpec, human: Stone = BLACK): Mistake[] {
-  const g = new Game({ size: spec.size, mode: spec.mode, captureTarget: spec.captureTarget });
+  return analyzeGame(spec, human).mistakes;
+}
+
+/** 한 판을 처음부터 다시 두며 놓친 장면과 잘한 수를 함께 찾는다 */
+export function analyzeGame(spec: ReplaySpec, human: Stone = BLACK): { mistakes: Mistake[]; good: Good[] } {
+  const g = start(spec);
   const opp = opponent(human);
   const out: Mistake[] = [];
+  const good: Good[] = [];
   // 상대가 두기 직전의 단수 돌들(방금 생긴 기회인지 가리려고)
   let oppAtariBefore = new Set<number>();
   let myAtariBefore = new Set<number>();
@@ -82,18 +105,29 @@ export function findMistakes(spec: ReplaySpec, human: Stone = BLACK): Mistake[] 
       if (!r.ok) break;
       continue;
     }
-    const mistake = judge(g, i, m, human, fresh(ataris(g, opp), oppAtariBefore), fresh(ataris(g, human), myAtariBefore));
-    if (mistake) out.push(mistake);
+    const j = judge(g, i, m, human, fresh(ataris(g, opp), oppAtariBefore), fresh(ataris(g, human), myAtariBefore));
+    if (j.mistake) out.push(j.mistake);
+    if (j.didCapture) good.push({ index: i, kind: 'capture' });
+    if (j.didSave) good.push({ index: i, kind: 'escape' });
     const r = m < 0 ? g.pass() : g.play(m);
     if (!r.ok) break;
   }
-  return out;
+  return { mistakes: out, good };
 }
 
-function judge(g: Game, index: number, m: number, me: Stone, oppAtari: number[][], myAtari: number[][]): Mistake | null {
+interface Judged {
+  mistake: Mistake | null;
+  /** 이 수로 하양이 돌을 잡았나 */
+  didCapture: boolean;
+  /** 이 수로 방금 단수가 된 내 돌을 살렸나 */
+  didSave: boolean;
+}
+const NONE: Judged = { mistake: null, didCapture: false, didSave: false };
+
+function judge(g: Game, index: number, m: number, me: Stone, oppAtari: number[][], myAtari: number[][]): Judged {
   // 넘기기는 정규 대국에서 끝내기 신호이므로 따지지 않는다(따내기 바둑의 넘기기는 잡기·도망 놓침만 본다)
   const pass = m < 0;
-  if (pass && g.rules.mode === 'normal') return null;
+  if (pass && g.rules.mode === 'normal') return NONE;
 
   // 잡을 수 있었던 자리: 방금 단수가 된 상대 무리를 잡고, 둔 뒤 내 돌이 바로 잡히지 않는 수
   const oppStones = new Set(oppAtari.flat());
@@ -128,7 +162,7 @@ function judge(g: Game, index: number, m: number, me: Stone, oppAtari: number[][
   if (!pass) {
     ownEye = g.rules.mode === 'normal' && g.geo.neighbors[m].every((q) => g.at(q) === me);
     const r = g.play(m);
-    if (!r.ok) return null;
+    if (!r.ok) return NONE;
     didCapture = r.captured.length > 0;
     if (!g.isOver && !didCapture) {
       const grp = g.group(m);
@@ -140,11 +174,10 @@ function judge(g: Game, index: number, m: number, me: Stone, oppAtari: number[][
   const played = pass ? null : m;
   const make = (kind: MistakeKind, better: number[]): Mistake => ({ index, kind, played, better, lesson: MISTAKE_LESSON[kind] });
 
-  if (!didCapture && !didSave) {
-    if (caps.length) return make('missed-capture', caps);
-    if (saves.length) return make('missed-escape', saves);
-  }
-  if (selfAtari && !didSave) return make('self-atari', []);
-  if (ownEye && !didCapture && !didSave) return make('own-eye', []);
-  return null;
+  let mistake: Mistake | null = null;
+  if (!didCapture && !didSave && caps.length) mistake = make('missed-capture', caps);
+  else if (!didCapture && !didSave && saves.length) mistake = make('missed-escape', saves);
+  else if (selfAtari && !didSave) mistake = make('self-atari', []);
+  else if (ownEye && !didCapture && !didSave) mistake = make('own-eye', []);
+  return { mistake, didCapture, didSave };
 }

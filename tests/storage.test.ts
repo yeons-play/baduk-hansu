@@ -68,3 +68,24 @@ describe('기기 저장', () => {
     expect(S.loadLessons().done).toEqual([3]);
   });
 });
+
+describe('놓친 장면 저장', () => {
+  beforeEach(() => store.clear());
+  const scene = (id: string) => ({ v: 1 as const, id, gameId: 1, kind: 'capture' as const, size: 5, b: [[1, 2]] as [number, number][], w: [[2, 2]] as [number, number][] });
+
+  it('새 장면이 앞에 오고, 같은 번호는 하나만, 최대 개수까지만 남긴다', () => {
+    S.addScenes([scene('1-6')]);
+    S.addScenes([scene('2-4'), scene('1-6')]);
+    expect(S.loadScenes().map((s) => s.id)).toEqual(['2-4', '1-6']);
+    S.addScenes(Array.from({ length: S.SCENES_MAX + 5 }, (_, i) => scene(`9-${i}`)));
+    expect(S.loadScenes().length).toBe(S.SCENES_MAX);
+  });
+
+  it('한 번에 맞힌 장면은 뺀다, 망가진 저장값은 무시한다', () => {
+    S.addScenes([scene('1-6'), scene('2-4')]);
+    S.removeScene('1-6');
+    expect(S.loadScenes().map((s) => s.id)).toEqual(['2-4']);
+    store.setItem('baduk-scenes', JSON.stringify([{ v: 1, id: 3 }, null, scene('5-1')]));
+    expect(S.loadScenes().map((s) => s.id)).toEqual(['5-1']);
+  });
+});

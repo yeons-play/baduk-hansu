@@ -16,7 +16,7 @@ function isOwnEye(g: Game, p: number, me: Stone): boolean {
 }
 
 /** 한 판을 끝까지 무작위로 두고 교차점별 땅 주인을 돌려준다 */
-function playout(start: Game, rand: () => number): Uint8Array {
+export function playout(start: Game, rand: () => number): Uint8Array {
   const n = start.geo.n;
   const board = new Uint8Array(n);
   for (let p = 0; p < n; p++) board[p] = start.at(p);

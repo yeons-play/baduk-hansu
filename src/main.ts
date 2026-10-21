@@ -6,6 +6,7 @@ import './style.css';
 import { BLACK, EMPTY, WHITE, Game, type GameMode, type IllegalReason } from './engine/rules';
 import { chooseMove, type Level, type MoveReason } from './engine/ai/beginner';
 import { estimateDead, countDead } from './engine/ai/dead';
+import { hopeless } from './engine/ai/resign';
 import { pointFromEvent, renderBoard } from './ui/board';
 import { type Mood, starBurst, stoneFace } from './ui/faces';
 import {
@@ -74,6 +75,8 @@ const ui = {
   lesson: null as LessonPlayer | null,
   /** 집 세기 화면에서 들어낼 죽은 돌(앱이 짐작, 눌러서 고침) */
   dead: [] as number[],
+  /** 하양이가 '많이 지고 있다'고 본 연속 횟수(두 번 연속이면 기권) */
+  hopelessStreak: 0,
 };
 
 const HUMAN = BLACK;
@@ -135,6 +138,7 @@ function newGame(level: Level, target: Target) {
       : new Game({ size: ui.size, mode: 'capture', captureTarget: target });
   ui.level = level;
   ui.target = target;
+  ui.hopelessStreak = 0;
   resetMarks();
   persist();
 }
@@ -155,6 +159,7 @@ function resumeGame(): boolean {
     return false;
   }
   ui.game = g;
+  ui.hopelessStreak = 0;
   ui.level = saved.level;
   ui.mode = saved.mode;
   if (saved.mode === 'capture' && SIZES.includes(saved.size as BoardSize)) ui.size = saved.size as BoardSize;
@@ -221,6 +226,16 @@ function scheduleAI() {
     if (!game || ui.screen !== 'game') {
       ui.aiThinking = false;
       return;
+    }
+    // 진짜 바둑에서 크게 지고 있으면(두 번 연속 그렇게 보이면) 하양이가 기권한다
+    if (game.rules.mode === 'normal') {
+      ui.hopelessStreak = hopeless(game, game.toMove) ? ui.hopelessStreak + 1 : 0;
+      if (ui.hopelessStreak >= 2) {
+        ui.hopelessStreak = 0;
+        game.resign();
+        ui.aiThinking = false;
+        return finishGame();
+      }
     }
     const c = chooseMove(game, { level: ui.level });
     if (c.point == null) {
@@ -305,6 +320,13 @@ function finishGame() {
             mood: 'oops',
             win: false,
           };
+  } else if (res.reason === 'resign' && outcome === 'win') {
+    ui.result = {
+      title: '와, 이겼어요!',
+      body: '하양이가 "졌어요" 하고 돌을 던졌어요(기권). 바둑에서는 많이 지고 있으면 이렇게 인사하고 끝내요.',
+      mood: 'wow',
+      win: true,
+    };
   } else if (res.reason === 'resign') {
     ui.result = { title: '다음에 또 해요', body: '다시 하면 더 잘할 수 있어요!', mood: 'happy', win: false };
   } else if (res.reason === 'score') {
@@ -335,6 +357,7 @@ function undoTurn() {
     g.undo();
   } while (g.moves.length && g.toMove !== HUMAN);
   if (g.toMove !== HUMAN) g.undo();
+  ui.hopelessStreak = 0;
   resetMarks();
   persist();
   render();

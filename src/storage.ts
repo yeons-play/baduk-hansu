@@ -14,6 +14,8 @@ export interface SavedGame {
   captureTarget: number;
   /** 착수 좌표, 패스는 -1 */
   moves: number[];
+  /** 둘 다 넘겨 집 세기 화면에 있을 때: 고른 죽은 돌(앱을 닫았다 열어도 그대로) */
+  dead?: number[];
   savedAt: string;
 }
 

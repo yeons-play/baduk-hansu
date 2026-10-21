@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLACK, WHITE, Game, toPoint } from '../src/engine/rules';
-import { estimateDead } from '../src/engine/ai/dead';
+import { estimateDead, inSeki } from '../src/engine/ai/dead';
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -117,5 +117,66 @@ describe('죽은 돌 짐작', () => {
       BLACK,
     );
     for (let i = 0; i < 5; i++) expect(estimateDead(g, { rand: rng(60 + i) })).toEqual([]);
+  });
+});
+
+describe('빅(세키)', () => {
+  // 백 울타리 안에 흑 네 점, 공배 두 곳(3,3)(4,3)을 둘이 함께 씀. 누가 메워도 스스로 단수 → 빅
+  const SEKI = [
+    'X X X X X X X . X',
+    'X O O O O O X X X',
+    'X O X X X O X . X',
+    'X O X . . O X X X',
+    'X O O O O O X . X',
+    'X X X X X X X X X',
+    '. X . X X . X . X',
+    'X X X X X X X X X',
+    'X . X . X . X . X',
+  ];
+
+  it('빅 무리는 흑·백 모두 죽은 돌로 보지 않는다', () => {
+    const g = Game.fromDiagram(SEKI, BLACK);
+    for (let i = 0; i < 4; i++) expect(estimateDead(g, { rand: rng(70 + i) })).toEqual([]);
+  });
+
+  it('눈 하나씩 + 공배 하나를 함께 쓰는 빅도 살린다', () => {
+    // 왼쪽 위: 흑(눈 (0,0))과 백(눈 (4,0))이 공배 (2,0)을 함께 씀
+    const g = Game.fromDiagram(
+      [
+        '. X . O . O X . X',
+        'X X O O O O X X X',
+        'O O X X X X X . X',
+        '. O X . X . X X X',
+        'O O X X X X X X X',
+        '. O X . X . X . X',
+        'O O X X X X X X X',
+        '. O X . . . . . .',
+        'O O X . . . . . .',
+      ],
+      BLACK,
+    );
+    expect(inSeki(g, toPoint(9, 1, 0))).toBe(true);
+    expect(inSeki(g, toPoint(9, 3, 0))).toBe(true);
+    for (let i = 0; i < 3; i++) expect(estimateDead(g, { rand: rng(90 + i) })).toEqual([]);
+  });
+
+  it('상대와 함께 쓰는 숨구멍이 없는 두 칸 눈 무리는 빅이 아니라 죽은 돌', () => {
+    const g = Game.fromDiagram(
+      [
+        'X X X X X X X X X',
+        'X X O O O O X . X',
+        'X O . . O X X X X',
+        'X X O O O X . . X',
+        'X X X X X X . . X',
+        'X . X . X X X X X',
+        'X X X X X . X . X',
+        'X . X . X X X X X',
+        'X X X X X . X . X',
+      ],
+      BLACK,
+    );
+    const w = toPoint(9, 2, 1);
+    expect(inSeki(g, w)).toBe(false);
+    expect(estimateDead(g, { rand: rng(80) })).toContain(w);
   });
 });

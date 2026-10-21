@@ -24,6 +24,8 @@ import {
   markLessonDone,
   loadPractice,
   markPracticeDone,
+  addHistory,
+  loadHistory,
   resetLessons,
   exportBackup,
   importBackup,
@@ -34,12 +36,13 @@ import { speak, stopSpeaking } from './speech';
 import { ALL_TITLES, LESSONS } from './lessons/data';
 import { LessonPlayer, rich } from './lessons/player';
 import { PRACTICE, COUNT, makePractice, type PracticeSet } from './lessons/practice';
+import { currentMistake, historyItemHTML, mistakeText, openReview, reviewAction, reviewHTML, reviewSeek, type ReviewState } from './review';
 
 // ───────── 상태 ─────────
 // 아이폰·아이패드에서는 history API를 쓰지 않는다(홈 화면 앱 뒤로가기 꼬임 방지).
 // 화면 이동은 아래 탭과 '← 뒤로' 버튼만.
 
-type Screen = 'home' | 'game' | 'learn' | 'puzzle' | 'record' | 'lesson';
+type Screen = 'home' | 'game' | 'learn' | 'puzzle' | 'record' | 'lesson' | 'review';
 type Sheet =
   | null
   | 'start'
@@ -77,6 +80,10 @@ const ui = {
   dead: [] as number[],
   /** 하양이가 '많이 지고 있다'고 본 연속 횟수(두 번 연속이면 기권) */
   hopelessStreak: 0,
+  /** 방금 끝난 판의 기록 번호(결과 화면에서 바로 복습) */
+  lastFinishedId: 0,
+  /** 복습 중인 판과 보고 있는 수(0 = 빈 판) */
+  review: null as ReviewState | null,
 };
 
 const HUMAN = BLACK;
@@ -302,6 +309,15 @@ function resumeAfterScore() {
   scheduleAI();
 }
 
+/** 기록 목록에 보일 결과 한 줄 */
+function historySummary(g: Game): string {
+  const res = g.result!;
+  if (res.reason === 'score') return `까망이 ${res.score.blackTotal}점 · 하양이 ${res.score.whiteTotal}점`;
+  if (res.reason === 'resign') return res.winner === HUMAN ? '하양이 기권' : '까망이 그만하기';
+  if (res.reason === 'capture') return `${g.rules.captureTarget}개 먼저 잡기`;
+  return '둘 다 넘김';
+}
+
 function finishGame() {
   const g = ui.game!;
   const res = g.result!;
@@ -341,6 +357,22 @@ function finishGame() {
   } else {
     ui.result = { title: '비겼어요', body: '둘 다 돌을 잡지 못했어요.', mood: 'happy', win: false };
   }
+  // 복습용으로 끝난 판을 남긴다
+  const id = Date.now();
+  addHistory({
+    v: 1,
+    id,
+    mode: g.rules.mode,
+    size: g.size,
+    level: ui.level,
+    captureTarget: g.rules.captureTarget,
+    moves: g.moves.filter((m) => m.type !== 'resign').map((m) => (m.type === 'play' ? m.point : -1)),
+    outcome,
+    reason: res.reason,
+    summary: historySummary(g),
+    endedAt: new Date(id).toISOString(),
+  });
+  ui.lastFinishedId = id;
   ui.sheet = 'result';
   resetMarks();
   if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
@@ -407,7 +439,7 @@ function showToast(text: string) {
 }
 
 function render() {
-  const nobar = ui.screen === 'game' || ui.screen === 'lesson';
+  const nobar = ui.screen === 'game' || ui.screen === 'lesson' || ui.screen === 'review';
   document.body.classList.toggle('nobar', nobar);
   app.innerHTML =
     screenHTML() +
@@ -430,6 +462,8 @@ function screenHTML(): string {
       return puzzleHTML();
     case 'record':
       return recordHTML();
+    case 'review':
+      return ui.review ? reviewHTML(ui.review) : recordHTML();
   }
 }
 
@@ -602,10 +636,28 @@ function learnHTML(): string {
 }
 
 function recordHTML(): string {
+  const history = loadHistory();
   return `<main class="screen">
   <header class="page-head"><h1>내 기록</h1><p>이 기기에만 저장돼요</p></header>
   ${statsHTML(true)}
+  <h2 class="section-title">지난 판 다시 보기(복습)</h2>
+  ${
+    history.length
+      ? `<p class="section-sub">최근 ${history.length}판 · 눌러서 한 수씩 다시 봐요</p><ol class="lessons">${history.map(historyItemHTML).join('')}</ol>`
+      : '<p class="section-sub">아직 끝난 판이 없어요. 하양이와 한 판 두면 여기서 다시 볼 수 있어요.</p>'
+  }
 </main>`;
+}
+
+function openReviewById(id: number) {
+  const g = loadHistory().find((h) => h.id === id);
+  if (!g) return showToast('그 판 기록이 없어요');
+  ui.lesson?.stop();
+  stopSpeaking();
+  ui.sheet = null;
+  ui.review = openReview(g);
+  ui.screen = 'review';
+  render();
 }
 
 function practiceOpen(set: PracticeSet): boolean {
@@ -819,7 +871,8 @@ function sheetHTML(): string {
     const r = ui.result;
     body = `<div class="result-face">${r.win ? starBurst() : ''}${stoneFace('black', 120, r.mood)}</div>
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
-    <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>`;
+    <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>
+    ${ui.lastFinishedId ? `<button class="btn text full" data-action="review-open" data-id="${ui.lastFinishedId}">${icon('undo')}둔 수 다시 보기(복습)</button>` : ''}`;
   }
   const dismissable =
     ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings' || ui.sheet === 'reset-lessons' || ui.sheet === 'pass';
@@ -914,6 +967,20 @@ app.addEventListener('click', (ev) => {
     case 'practice-open':
       openPractice(Number(el.dataset.i));
       break;
+    case 'review-open':
+      return openReviewById(Number(el.dataset.id));
+    case 'rv-first':
+    case 'rv-prev':
+    case 'rv-next':
+    case 'rv-last':
+    case 'rv-mistake': {
+      const r = ui.review;
+      if (!r || !reviewAction(r, el.dataset.action, Number(el.dataset.dir ?? 1))) return;
+      const m = currentMistake(r);
+      if (m) speak(mistakeText(m).replace(/\*\*/g, ''));
+      else if (el.dataset.action !== 'rv-mistake') sfx('stone');
+      break;
+    }
     case 'settings':
       ui.sheet = 'settings';
       break;
@@ -1069,6 +1136,20 @@ async function shareBackup() {
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+app.addEventListener('input', (ev) => {
+  const input = ev.target as HTMLInputElement;
+  if (!input.classList.contains('rv-seek') || !ui.review) return;
+  reviewSeek(ui.review, Number(input.value));
+  // 끄는 중에는 슬라이더는 그대로 두고 바둑판·수 세기·설명만 바꾼다(전체를 다시 그리면 손가락이 끊김)
+  const tmp = document.createElement('div');
+  tmp.innerHTML = reviewHTML(ui.review);
+  for (const sel of ['.board-wrap', '.rv-bar', '.rv-dyn']) {
+    const now = app.querySelector(sel);
+    const next = tmp.querySelector(sel);
+    if (now && next) now.replaceWith(next);
+  }
+});
 
 app.addEventListener('change', (ev) => {
   const input = ev.target as HTMLInputElement;

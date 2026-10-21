@@ -6,8 +6,16 @@ const KEY_GAME = 'baduk-current-game';
 const KEY_STATS = 'baduk-stats';
 const KEY_SEEN_RULES = 'baduk-seen-capture-rules';
 
+/** 빈 판이 아닌 배치에서 시작한 판(출발 판 놀이)의 처음 모습. 없으면 빈 판에서 시작 */
+export interface GameSetup {
+  /** 교차점별 0 빈 곳, 1 흑, 2 백 */
+  board: number[];
+  toMove: 1 | 2;
+}
+
 export interface SavedGame {
   v: 1;
+  setup?: GameSetup;
   mode: GameMode;
   size: number;
   level: Level;
@@ -139,6 +147,12 @@ export interface FinishedGame {
   v: 1;
   /** 고유 번호(끝난 시각 밀리초) */
   id: number;
+  /** 출발 판 놀이였으면 처음 배치(복습은 여기서부터 다시 둔다) */
+  setup?: GameSetup;
+  /** 잘한 수: 잡기·도망가기 횟수(나중에 홈 추천에 씀) */
+  good?: { capture: number; escape: number };
+  /** 놓친 장면 종류별 횟수 */
+  missed?: Record<string, number>;
   mode: GameMode;
   size: number;
   level: Level;
@@ -160,6 +174,42 @@ export function loadHistory(): FinishedGame[] {
 /** 새 판을 맨 앞에 넣고 오래된 판은 지운다 */
 export function addHistory(g: FinishedGame): void {
   write(KEY_HISTORY, [g, ...loadHistory().filter((h) => h.id !== g.id)].slice(0, HISTORY_MAX));
+}
+
+// ───────── 지난 판에서 놓친 장면(내 문제) ─────────
+const KEY_SCENES = 'baduk-scenes';
+/** 남겨 두는 장면 수(새것부터) */
+export const SCENES_MAX = 30;
+
+/** 놓친 장면을 문제로 바꿔 둔 것. 좌표는 문제 판(잘라 낸 판일 수 있음) 기준 [가로, 세로] */
+export interface SavedScene {
+  v: 1;
+  /** `${판 번호}-${몇 번째 수}` */
+  id: string;
+  gameId: number;
+  kind: 'capture' | 'escape';
+  size: number;
+  b: [number, number][];
+  w: [number, number][];
+  /** escape: 살릴 까망이 돌 하나 */
+  libsOf?: [number, number];
+}
+
+export function loadScenes(): SavedScene[] {
+  const s = read<SavedScene[]>(KEY_SCENES);
+  return Array.isArray(s)
+    ? s.filter((x) => x && x.v === 1 && typeof x.id === 'string' && Array.isArray(x.b) && Array.isArray(x.w) && typeof x.size === 'number')
+    : [];
+}
+/** 새 장면을 앞에 넣는다(같은 번호는 하나만) */
+export function addScenes(list: SavedScene[]): void {
+  if (!list.length) return;
+  const ids = new Set(list.map((s) => s.id));
+  write(KEY_SCENES, [...list, ...loadScenes().filter((s) => !ids.has(s.id))].slice(0, SCENES_MAX));
+}
+/** 한 번에 맞힌 장면은 목록에서 뺀다 */
+export function removeScene(id: string): void {
+  write(KEY_SCENES, loadScenes().filter((s) => s.id !== id));
 }
 
 // ───────── 연습 문제 ─────────

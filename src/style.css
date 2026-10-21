@@ -146,8 +146,9 @@ b { font-weight: 700; }
 .tabbar button[aria-current='page'] { color: var(--primary); background: #FFF1EC; }
 
 /* ── 상단 바 ── */
-.bar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
-.bar h1 { text-align: center; font-family: var(--title); font-weight: 400; font-size: 1.5rem; }
+.bar { display: grid; grid-template-columns: minmax(auto, 1fr) minmax(0, auto) minmax(auto, 1fr); align-items: center; gap: 8px; }
+/* 제목이 길어도 양쪽 버튼('← 뒤로' 등)을 덮지 않고 줄을 바꾼다 */
+.bar h1 { text-align: center; font-family: var(--title); font-weight: 400; font-size: 1.5rem; min-width: 0; overflow-wrap: anywhere; }
 .back { min-height: 3rem; display: flex; align-items: center; gap: 2px; padding: 0 14px 0 6px; font-family: var(--title); font-size: 1.15rem; border-radius: 999px; background: var(--card); border: 2px solid var(--line); justify-self: start; }
 .pill { justify-self: end; font-family: var(--title); font-size: 1rem; padding: 6px 14px; border-radius: 999px; background: var(--yellow); color: var(--yellow-ink); white-space: nowrap; }
 
@@ -314,6 +315,7 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .feedback.ok { background: #E9F8F1; color: #23614C; }
 .feedback.no { background: var(--pink); color: #8E2F44; }
 .feedback b { color: inherit; }
+.sheet .feedback.praise { font-size: 1.1rem; padding: 10px 14px; }
 .lesson-screen .next { margin-top: auto; }
 .lesson-screen .board-wrap { width: min(100%, 700px, calc(100dvh - 420px)); }
 .miss { animation: shake 0.35s; }

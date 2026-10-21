@@ -29,11 +29,19 @@ import {
   resetLessons,
   exportBackup,
   importBackup,
+  loadScenes,
+  addScenes,
+  removeScene,
+  type GameSetup,
+  type SavedScene,
 } from './storage';
+import { analyzeGame } from './engine/ai/review';
+import { makeSceneLesson, sceneFromMistake, SCENES_PER_GAME } from './lessons/scenes';
+import { keyCardFor, type KeyCard } from './lessons/keys';
 import { icon } from './ui/icons';
 import { sfx, unlockAudio } from './audio';
 import { speak, stopSpeaking } from './speech';
-import { ALL_TITLES, LESSONS } from './lessons/data';
+import { ALL_TITLES, LESSONS, type Lesson } from './lessons/data';
 import { LessonPlayer, rich } from './lessons/player';
 import { PRACTICE, COUNT, makePractice, type PracticeSet } from './lessons/practice';
 import { currentMistake, historyItemHTML, mistakeText, openReview, reviewAction, reviewHTML, reviewSeek, type ReviewState } from './review';
@@ -54,7 +62,8 @@ type Sheet =
   | 'practice-done'
   | 'reset-lessons'
   | 'pass'
-  | 'score';
+  | 'score'
+  | 'key';
 
 const ui = {
   screen: 'home' as Screen,
@@ -84,6 +93,14 @@ const ui = {
   lastFinishedId: 0,
   /** 복습 중인 판과 보고 있는 수(0 = 빈 판) */
   review: null as ReviewState | null,
+  /** 지금 판의 출발 배치(출발 판 놀이). null = 빈 판에서 시작 */
+  setup: null as GameSetup | null,
+  /** 방금 끝난 판에서 문제로 만든 놓친 장면 */
+  lastScenes: [] as SavedScene[],
+  /** 방금 끝난 판에서 잘한 것(결과 화면 칭찬) */
+  praise: '',
+  /** 연습에서 두 번 틀렸을 때 보여 줄 핵심 그림 */
+  keyCard: null as KeyCard | null,
 };
 
 const HUMAN = BLACK;
@@ -143,6 +160,7 @@ function newGame(level: Level, target: Target) {
     ui.mode === 'normal'
       ? new Game({ size: ui.normalSize, mode: 'normal' })
       : new Game({ size: ui.size, mode: 'capture', captureTarget: target });
+  ui.setup = null;
   ui.level = level;
   ui.target = target;
   ui.hopelessStreak = 0;
@@ -155,7 +173,10 @@ function resumeGame(): boolean {
   if (!saved || saved.v !== 1 || !Array.isArray(saved.moves)) return false;
   let g: Game;
   try {
-    g = new Game({ size: saved.size, mode: saved.mode, captureTarget: saved.captureTarget });
+    g = new Game(
+      { size: saved.size, mode: saved.mode, captureTarget: saved.captureTarget },
+      saved.setup ? { board: saved.setup.board, toMove: saved.setup.toMove } : undefined,
+    );
   } catch {
     clearGame(); // 망가진 저장값(판 크기 등)
     return false;
@@ -173,6 +194,7 @@ function resumeGame(): boolean {
     return false;
   }
   ui.game = g;
+  ui.setup = saved.setup ?? null;
   ui.hopelessStreak = 0;
   ui.level = saved.level;
   ui.mode = saved.mode;
@@ -199,6 +221,7 @@ function persist() {
     level: ui.level,
     captureTarget: g.rules.captureTarget,
     moves: g.moves.map((m) => (m.type === 'play' ? m.point : -1)),
+    ...(ui.setup ? { setup: ui.setup } : {}),
     ...(scoring ? { dead: ui.dead } : {}),
     savedAt: new Date().toISOString(),
   });
@@ -372,16 +395,36 @@ function finishGame() {
   } else {
     ui.result = { title: '비겼어요', body: '둘 다 더 놓을 곳이 없어서 끝났어요.', mood: 'happy', win: false };
   }
-  // 복습용으로 끝난 판을 남긴다
+  // 복습용으로 끝난 판을 남긴다. 처음부터 다시 두어 보며 잘한 수는 칭찬하고, 놓친 장면은 문제로 만든다
   const id = Date.now();
+  const moves = g.moves.filter((m) => m.type !== 'resign').map((m) => (m.type === 'play' ? m.point : -1));
+  const spec = { mode: g.rules.mode, size: g.size, captureTarget: g.rules.captureTarget, moves, ...(ui.setup ? { setup: ui.setup } : {}) };
+  const an = analyzeGame(spec, HUMAN);
+  const good = { capture: 0, escape: 0 };
+  for (const x of an.good) good[x.kind]++;
+  const missed: Record<string, number> = {};
+  for (const m of an.mistakes) missed[m.kind] = (missed[m.kind] ?? 0) + 1;
+  // 놓친 장면은 마지막 것부터 두 개까지(방금 둔 장면이 기억에 남아 있으니까)
+  const scenes: SavedScene[] = [];
+  for (const m of [...an.mistakes].reverse()) {
+    if (scenes.length >= SCENES_PER_GAME) break;
+    const s = sceneFromMistake(spec, m, id);
+    if (s) scenes.unshift(s);
+  }
+  addScenes(scenes);
+  ui.lastScenes = scenes;
+  ui.praise = praiseText(good);
   addHistory({
     v: 1,
     id,
+    ...(ui.setup ? { setup: ui.setup } : {}),
     mode: g.rules.mode,
     size: g.size,
     level: ui.level,
     captureTarget: g.rules.captureTarget,
-    moves: g.moves.filter((m) => m.type !== 'resign').map((m) => (m.type === 'play' ? m.point : -1)),
+    moves,
+    good,
+    missed,
     outcome,
     reason: res.reason,
     summary: historySummary(g),
@@ -391,8 +434,16 @@ function finishGame() {
   ui.sheet = 'result';
   resetMarks();
   if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
-  speak(`${ui.result.title} ${ui.result.body}`);
+  speak(`${ui.result.title} ${ui.result.body} ${ui.praise}`);
   render();
+}
+
+/** 잘한 수 칭찬 한 줄(없으면 빈 글) */
+function praiseText(good: { capture: number; escape: number }): string {
+  const parts: string[] = [];
+  if (good.capture) parts.push(`잡기(따내기) ${good.capture}번`);
+  if (good.escape) parts.push(`도망가기(달아나기) ${good.escape}번`);
+  return parts.length ? `배운 대로 ${parts.join(', ')} 했어요!` : '';
 }
 
 function undoTurn() {
@@ -703,19 +754,34 @@ function puzzleHTML(): string {
       ? `<li><button class="lesson ${n ? 'fin' : ''}" data-action="practice-open" data-i="${i}">${inner}</button></li>`
       : `<li><div class="lesson locked">${inner}</div></li>`;
   }).join('');
+  const scenes = loadScenes();
+  const sceneItem = scenes.length
+    ? `<li><button class="lesson" data-action="scenes-open"><span class="lnum">${icon('undo')}</span><span class="ltitle">내가 놓친 장면<span class="term">복습</span><small class="lgoal">지난 판에서 놓친 장면 ${scenes.length}개를 다시 풀어요</small></span><span class="badge go">풀기</span></button></li>`
+    : '';
   return `<main class="screen">
   <header class="page-head"><h1>문제 놀이</h1><p>강에서 배운 걸 여러 번 풀어 봐요. 한 번에 ${COUNT}문제, 할 때마다 새 문제가 나와요.</p></header>
-  <ol class="lessons">${items}</ol>
+  <ol class="lessons">${sceneItem}${items}</ol>
 </main>`;
 }
 
 function openPractice(i: number) {
   const set = PRACTICE[i];
   if (!set || !practiceOpen(set)) return;
+  startLesson(makePractice(set));
+}
+
+/** 강의·연습 화면 열기. 연습에서 같은 문제를 두 번 틀리면 그 강의 핵심 그림 한 장을 보여 준다 */
+function startLesson(l: Lesson) {
   ui.lesson?.stop();
   ui.sheet = null;
   ui.screen = 'lesson';
-  ui.lesson = new LessonPlayer(makePractice(set), render);
+  ui.lesson = new LessonPlayer(l, render, (step) => {
+    const card = keyCardFor(step);
+    if (!card) return;
+    ui.keyCard = card;
+    ui.sheet = 'key';
+    speak(card.text);
+  });
 }
 
 function tabbarHTML(): string {
@@ -887,19 +953,40 @@ function sheetHTML(): string {
   } else if (ui.sheet === 'practice-done') {
     const l = ui.lesson!.lesson;
     const i = PRACTICE.findIndex((p) => p.skill === l.practice);
+    // 놓친 장면 연습은 실전에서 왔으니 다시 실전으로 이어 준다
+    const more =
+      l.practice === 'scene'
+        ? `<button class="btn primary" data-action="open-start" data-mode="${ui.mode}">하양이랑 한 판 더</button>`
+        : `<button class="btn primary" data-action="practice-open" data-i="${i}">새 문제 더!</button>`;
     body = `<div class="result-face">${starBurst()}${stoneFace('black', 120, 'wow')}</div>
-    <h2 class="result-title">${COUNT}문제 다 풀었어요!</h2>
+    <h2 class="result-title">${l.steps.length}문제 다 풀었어요!</h2>
     <p class="sheet-p center">${rich(`**${l.title}(${l.term})** 연습 끝. 정말 잘했어요!`)}</p>
-    <div class="row2"><button class="btn ghost" data-action="tab" data-tab="puzzle">목록으로</button><button class="btn primary" data-action="practice-open" data-i="${i}">새 문제 더!</button></div>`;
+    <div class="row2"><button class="btn ghost" data-action="tab" data-tab="puzzle">목록으로</button>${more}</div>`;
+  } else if (ui.sheet === 'key' && ui.keyCard) {
+    const c = ui.keyCard;
+    const kg = Game.fromDiagram(c.rows, BLACK);
+    const kl = LESSONS[c.lesson - 1];
+    body = `<h2>잠깐! ${c.lesson}강 다시 보기</h2>
+    <div class="rules-board">${renderBoard(kg, { rings: [c.ring[1] * kg.size + c.ring[0]] })}</div>
+    <p class="sheet-p">${rich(c.text)}</p>
+    <button class="btn primary full big" data-action="close-sheet">알았어요! 다시 풀래요</button>
+    ${kl ? `<button class="btn text full" data-action="lesson-open" data-id="${kl.id}">${kl.id}강 ${kl.title} 처음부터 보기</button>` : ''}`;
   } else if (ui.sheet === 'result') {
     const r = ui.result;
     body = `<div class="result-face">${r.win ? starBurst() : ''}${stoneFace('black', 120, r.mood)}</div>
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
+    ${ui.praise ? `<div class="feedback ok praise">${icon('check')}<span>${rich(ui.praise)}</span></div>` : ''}
+    ${ui.lastScenes.length ? `<button class="btn ghost full" data-action="scene-retry">${icon('grid')}놓친 장면 다시 풀어 볼까요?</button>` : ''}
     <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>
     ${ui.lastFinishedId ? `<button class="btn text full" data-action="review-open" data-id="${ui.lastFinishedId}">${icon('undo')}둔 수 다시 보기(복습)</button>` : ''}`;
   }
   const dismissable =
-    ui.sheet === 'start' || ui.sheet === 'resign' || ui.sheet === 'settings' || ui.sheet === 'reset-lessons' || ui.sheet === 'pass';
+    ui.sheet === 'start' ||
+    ui.sheet === 'resign' ||
+    ui.sheet === 'settings' ||
+    ui.sheet === 'reset-lessons' ||
+    ui.sheet === 'pass' ||
+    ui.sheet === 'key';
   return `<div class="sheet-backdrop" ${dismissable ? 'data-action="close-sheet"' : ''}></div>
   <div class="sheet" role="dialog" aria-modal="true"><div class="sheet-handle"></div>${body}</div>`;
 }
@@ -956,19 +1043,27 @@ app.addEventListener('click', (ev) => {
     case 'lesson-open': {
       const l = LESSONS[Number(el.dataset.id) - 1];
       if (!l) break;
-      ui.lesson?.stop();
-      ui.sheet = null;
-      ui.screen = 'lesson';
-      ui.lesson = new LessonPlayer(l, render);
+      startLesson(l);
+      break;
+    }
+    case 'scene-retry':
+      // 방금 판에서 놓친 장면 + 같은 기술의 새 문제 두 개
+      if (ui.lastScenes.length) startLesson(makeSceneLesson(ui.lastScenes, 2));
+      break;
+    case 'scenes-open': {
+      const list = loadScenes().slice(0, COUNT);
+      if (list.length) startLesson(makeSceneLesson(list));
       break;
     }
     case 'lesson-next': {
       const lp = ui.lesson;
+      // 놓친 장면을 한 번에 맞히면 '내가 놓친 장면' 목록에서 뺀다(틀렸으면 다음에 또 나옴)
+      if (lp?.step.sceneId && lp.firstTry) removeScene(lp.step.sceneId);
       if (!lp?.next()) break;
       if (lp.lesson.practice) {
         markPracticeDone(lp.lesson.practice);
         ui.sheet = 'practice-done';
-        speak(`${COUNT}문제 다 풀었어요! 정말 잘했어요!`);
+        speak(`${lp.lesson.steps.length}문제 다 풀었어요! 정말 잘했어요!`);
       } else {
         markLessonDone(lp.lesson.id);
         ui.sheet = 'lesson-done';

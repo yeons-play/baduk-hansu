@@ -35,6 +35,13 @@ def shot(p, name):
         p.screenshot(path=os.path.join(SHOTS, DEV + '-' + name + '.png'))
 
 
+def close_key(p):
+    # 연습에서 두 번 틀리면 뜨는 핵심 그림을 닫는다(차례로 눌러 정답을 찾는 검사용)
+    if p.locator('.sheet [data-action="close-sheet"]').count():
+        p.click('.sheet [data-action="close-sheet"]')
+        p.wait_for_timeout(100)
+
+
 def tap_point(p, x, y, size=9, board='.game .board-svg'):
     box = p.locator(board).bounding_box()
     M, VB = 28, 400
@@ -361,6 +368,7 @@ with sync_playwright() as pw:
       for k in range(5):
           for q in range(49):
               tap_point(p, q % 7, q // 7, size=7, board='.lesson-screen .board-svg')
+              close_key(p)
               if not p.locator('[data-action="lesson-next"]').is_disabled():
                   break
           if not p.locator('[data-action="lesson-next"]').is_disabled():
@@ -384,6 +392,7 @@ with sync_playwright() as pw:
       for k in range(5):
           for q in range(49):
               tap_point(p, q % 7, q // 7, size=7, board='.lesson-screen .board-svg')
+              close_key(p)
               if not p.locator('[data-action="lesson-next"]').is_disabled():
                   break
           if not p.locator('[data-action="lesson-next"]').is_disabled():
@@ -413,6 +422,37 @@ with sync_playwright() as pw:
       if p.locator('[data-action="go-home"]').count(): p.click('[data-action="go-home"]')
       else: p.click('[data-action="exit-game"]')
       p.wait_for_timeout(200)
+
+      # 실전 → 문제: 놓친 잡기 장면이 '내 문제'가 되고, 잘한 잡기는 칭찬(하양이 (2,2)는 (2,3)이 자살수라 못 도망감)
+      P5 = lambda x, y: y * 5 + x
+      seq = [(1, 2), (4, 0), (2, 1), (0, 4), (3, 2), (4, 1), (1, 3), (0, 0), (3, 3), (4, 4), (2, 4), (2, 2), (0, 2)]
+      p.evaluate("m => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, mode: 'capture', size: 5, level: 1, captureTarget: 1, moves: m, savedAt: ''}))", [P5(x, y) for x, y in seq])
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.play-card.capture'); p.wait_for_timeout(150)
+      p.click('[data-action="resume"]'); p.wait_for_timeout(1500)
+      tap_point(p, 2, 3, size=5); p.click('[data-action="confirm"]'); p.wait_for_timeout(600)
+      ok('잡아서 이기면 칭찬(잡기 1번)', p.locator('.sheet .praise').count() == 1 and '잡기' in p.locator('.sheet .praise').inner_text())
+      ok('결과 화면에 놓친 장면 다시 풀기', p.locator('.sheet [data-action="scene-retry"]').count() == 1)
+      shot(p, '25-result-praise-scene')
+      p.click('.sheet [data-action="scene-retry"]'); p.wait_for_timeout(300)
+      ok('놓친 장면 문제(그 판 그대로 5줄)', p.locator('.lesson-screen .board-svg').get_attribute('aria-label') == '5줄 바둑판' and '놓친 장면' in p.locator('.lesson-card').inner_text())
+      for x, y in [(4, 2), (4, 3)]:
+          tap_point(p, x, y, size=5, board='.lesson-screen .board-svg'); p.wait_for_timeout(200)
+      ok('두 번 틀리면 핵심 그림(5강)', p.locator('.sheet').count() == 1 and '5강' in p.locator('.sheet').inner_text())
+      shot(p, '26-key-card')
+      p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(150)
+      tap_point(p, 2, 3, size=5, board='.lesson-screen .board-svg'); p.wait_for_timeout(200)
+      ok('정답을 두면 다음으로', not p.locator('[data-action="lesson-next"]').is_disabled())
+      p.click('[data-action="lesson-next"]'); p.wait_for_timeout(300)
+      ok('이어서 같은 기술의 새 문제(7줄)', p.locator('.lesson-screen .board-svg').get_attribute('aria-label') == '7줄 바둑판')
+      p.click('[data-action="lesson-exit"]'); p.wait_for_timeout(200)
+      ok('틀렸던 장면은 내가 놓친 장면에 남음', '내가 놓친 장면' in p.locator('.lessons').inner_text())
+      p.click('[data-action="scenes-open"]'); p.wait_for_timeout(300)
+      tap_point(p, 2, 3, size=5, board='.lesson-screen .board-svg'); p.wait_for_timeout(200)
+      p.click('[data-action="lesson-next"]'); p.wait_for_timeout(300)
+      ok('한 번에 맞히면 목록에서 빠짐', p.evaluate("JSON.parse(localStorage.getItem('baduk-scenes') || '[]').length") == 0)
+      p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(150)
+      p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(150)
 
       # 하양이 기권: 까망이 돌만 판의 절반 넘게(위 다섯 줄) 있는 9줄 판(하양이는 계속 넘김) → 두 번 더 두면 하양이가 기권
       moves = []

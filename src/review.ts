@@ -55,7 +55,8 @@ export function mistakeText(m: Mistake): string {
 export function moveText(g: FinishedGame, k: number): string {
   if (k === 0) return '빈 바둑판이에요. ▶를 눌러 한 수씩 봐요.';
   const m = g.moves[k - 1];
-  const who = k % 2 === 1 ? '까망이' : '하양이';
+  const blackFirst = (g.setup?.toMove ?? 1) === 1; // 출발 판 놀이는 하양이가 먼저일 수도 있음
+  const who = (k % 2 === 1) === blackFirst ? '까망이' : '하양이';
   if (m < 0) return `${k}수: ${who}가 넘겼어요.`;
   const [x, y] = toXY(g.size, m);
   return `${k}수: ${who}가 두었어요. (가로 ${x + 1}, 세로 ${y + 1})`;

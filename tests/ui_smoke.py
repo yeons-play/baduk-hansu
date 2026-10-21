@@ -346,7 +346,7 @@ with sync_playwright() as pw:
       p.evaluate("localStorage.setItem('baduk-lessons', JSON.stringify({v: 1, done: [1, 2, 3, 4, 5]}))")
       p.reload(); p.wait_for_timeout(400)
       p.click('.tabbar [data-tab="puzzle"]'); p.wait_for_timeout(200)
-      ok('문제 놀이: 4·5강 연습만 열림', p.locator('[data-action="practice-open"]').count() == 2 and p.locator('.lessons .locked').count() == 2)
+      ok('문제 놀이: 4·5강 연습만 열림', p.locator('[data-action="practice-open"]').count() == 2 and p.locator('.lessons .locked').count() == 4)
       shot(p, '20-puzzle-list')
       p.click('[data-action="practice-open"][data-i="1"]'); p.wait_for_timeout(300)
       ok('연습 화면 제목', '연습' in p.locator('.bar h1').inner_text())
@@ -365,6 +365,25 @@ with sync_playwright() as pw:
       ok('연습 횟수 저장', p.evaluate("JSON.parse(localStorage.getItem('baduk-practice')).done.capture") == 1)
       p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(200)
       ok('목록에 한 번 했어요 표시', '1번 했어요' in p.locator('.lessons').inner_text())
+      # 사활 연습(9강 뒤): 죽이기 5문제
+      p.evaluate("localStorage.setItem('baduk-lessons', JSON.stringify({v: 1, done: [1, 2, 3, 4, 5, 6, 7, 8, 9]}))")
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.tabbar [data-tab="puzzle"]'); p.wait_for_timeout(200)
+      ok('9강 뒤 사활 연습 열림', p.locator('[data-action="practice-open"]').count() == 6)
+      p.click('[data-action="practice-open"][data-i="5"]'); p.wait_for_timeout(300)
+      ok('죽이기 연습 화면', '두 집 막기' in p.locator('.bar h1').inner_text())
+      shot(p, '23-kill-practice')
+      solved = 0
+      for k in range(5):
+          for q in range(49):
+              tap_point(p, q % 7, q // 7, size=7, board='.lesson-screen .board-svg')
+              if not p.locator('[data-action="lesson-next"]').is_disabled():
+                  break
+          if not p.locator('[data-action="lesson-next"]').is_disabled():
+              solved += 1
+              p.click('[data-action="lesson-next"]'); p.wait_for_timeout(250)
+      ok('죽이기 5문제 다 풀기', solved == 5 and p.locator('.sheet .result-title').count() == 1, solved)
+      p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(200)
       p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(200)
 
       # 하양이 기권: 까망이 돌만 판의 절반 넘게(위 다섯 줄) 있는 9줄 판(하양이는 계속 넘김) → 두 번 더 두면 하양이가 기권

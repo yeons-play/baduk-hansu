@@ -33,6 +33,11 @@ interface Base {
   join?: XY;
   /** move goal 'cut': 끊어야 하는 하양이 돌 두 개 */
   cut?: [XY, XY];
+  /**
+   * 사활 문제: 둘러싸인 빈 곳. 있으면 goal 'live'·'kill'의 정답을 사활 풀이(lessons/life.ts)로 끝까지 따져 찾는다
+   * (libsOf = 살리거나 잡을 무리의 돌 하나)
+   */
+  region?: XY[];
 }
 
 /**
@@ -43,8 +48,10 @@ interface Base {
  *  connect: 둔 뒤 libsOf 돌과 join 돌이 한 무리가 되는 수
  *  cut: 하양이가 두면 cut 두 돌이 이어지는 자리(그 자리를 까망이가 먼저 차지)
  *  live: 둔 뒤 libsOf 무리의 숨구멍이 2개 이상이고, 하양이가 그 어디에도 놓을 수 없음(눈 두 개)
+ *        region이 있으면: 둔 뒤 하양이가 region 안에서 어떻게 두어도 libsOf 무리를 못 잡음(사활 풀이)
+ *  kill: (region 필요) 둔 뒤 하양이가 region 안에서 어떻게 두어도 libsOf 하양이 무리가 두 집을 못 냄(사활 풀이)
  */
-export type MoveGoal = 'capture' | 'atari' | 'escape' | 'connect' | 'cut' | 'live';
+export type MoveGoal = 'capture' | 'atari' | 'escape' | 'connect' | 'cut' | 'live' | 'kill';
 
 export type Step =
   | (Base & { kind: 'explain' })
@@ -90,7 +97,7 @@ export interface Lesson {
   size: number;
   steps: Step[];
   /** 연습 문제 판이면 그 기술 이름(강의 진도에 넣지 않음) */
-  practice?: 'find' | 'capture' | 'escape' | 'mix';
+  practice?: 'find' | 'capture' | 'escape' | 'mix' | 'live' | 'kill';
 }
 
 export const STARS: XY[] = [

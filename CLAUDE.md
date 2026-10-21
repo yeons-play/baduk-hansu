@@ -2,6 +2,12 @@
 
 > 새 세션은 먼저 `docs/HANDOFF.md`(현황·작업 흐름·함정)를 읽는다.
 
+## 작업 저장소 (가장 먼저 지킬 것)
+- 이 작업의 저장소는 **`yeons-play/baduk-hansu` 하나뿐**이다. 사용자는 다른 저장소도 관리하므로 섞이지 않게 한다.
+- 커밋·push·PR 전에 `git remote -v`로 주소가 `github.com/yeons-play/baduk-hansu`인지 확인한다. 다르면 멈추고 사용자에게 묻는다.
+- `gh api`로 PR을 열 때도 주소는 `repos/yeons-play/baduk-hansu/...`로만 쓴다.
+- 다른 저장소는 사용자가 이 대화에서 직접 이름을 대며 요청할 때만 연결하거나 읽는다. 수정·push·PR은 하지 않는다.
+
 개인용 바둑 학습 PWA. **주 사용자는 바둑을 처음 배우는 7살 어린이, 주 기기는 아이패드**(아이폰도 지원). 배포: https://yeons-play.github.io/baduk-hansu/
 
 ## 절대 원칙

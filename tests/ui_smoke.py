@@ -336,6 +336,42 @@ with sync_playwright() as pw:
       p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
       ok('홈에 하던 13줄 판 표시', '13줄' in p.locator('.play-card.normal').inner_text())
 
+      # 하양이 기권: 바로 끝내지 않고 '받을래요 / 끝까지 둘래요'를 묻는다 (크게 진 13줄 판에서 이어 두기)
+      lost = ['.....X.OOX...', '.....X.OXXX..', '..XXXOOOOXX..', '...OXXXXX..X.', '..XXX...XX.XX', '..XOO....X..X',
+              '..XXO.OXXXXXO', '..X.X.XXOOXX.', '.OX.X.XOOOOX.', '.XXX.X.OOXX..', '..X...XOXX...', '.OXXXXXOOX..O', '.O.....XXX...']
+      board = [{'.': 0, 'X': 1, 'O': 2}[c] for row in lost for c in row]
+      p.evaluate("""b => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, setup: {board: b, toMove: 2}, mode: 'normal', size: 13, level: 1, captureTarget: 1, moves: [], savedAt: ''}))""", board)
+      p.evaluate("localStorage.setItem('baduk-seen-normal-rules', 'true')")
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.play-card.normal'); p.wait_for_timeout(150)
+      p.click('[data-action="resume"]'); p.wait_for_timeout(2500)
+      offered = p.locator('[data-action="resign-accept"]').count() == 1
+      for x, y in [(0, 0), (1, 0), (0, 1), (12, 12), (11, 12), (12, 11), (0, 12)]:
+          if offered: break
+          tap_point(p, x, y, size=13)
+          if p.locator('[data-action="confirm"]').count() and p.locator('[data-action="confirm"]').is_enabled():
+              p.click('[data-action="confirm"]'); p.wait_for_timeout(2500)
+              offered = p.locator('[data-action="resign-accept"]').count() == 1
+      ok('하양이 기권은 먼저 묻기', offered)
+      shot(p, '17c-resign-offer')
+      p.click('[data-action="resign-decline"]'); p.wait_for_timeout(1500)
+      ok('더 둘래요 → 판이 이어짐', p.locator('.sheet').count() == 0 and p.locator('.game .board-svg').count() == 1)
+      p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
+      p.evaluate("""b => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, setup: {board: b, toMove: 2}, mode: 'normal', size: 13, level: 1, captureTarget: 1, moves: [], savedAt: ''}))""", board)
+      p.reload(); p.wait_for_timeout(400)
+      p.click('.play-card.normal'); p.wait_for_timeout(150)
+      p.click('[data-action="resume"]'); p.wait_for_timeout(2500)
+      offered = p.locator('[data-action="resign-accept"]').count() == 1
+      for x, y in [(0, 0), (1, 0), (0, 1), (12, 12), (11, 12), (12, 11), (0, 12)]:
+          if offered: break
+          tap_point(p, x, y, size=13)
+          if p.locator('[data-action="confirm"]').count() and p.locator('[data-action="confirm"]').is_enabled():
+              p.click('[data-action="confirm"]'); p.wait_for_timeout(2500)
+              offered = p.locator('[data-action="resign-accept"]').count() == 1
+      p.click('[data-action="resign-accept"]'); p.wait_for_timeout(300)
+      ok('받을래요 → 이겼어요 결과', '이겼어요' in p.locator('.sheet .result-title').inner_text(), p.locator('.sheet').inner_text()[:60] if p.locator('.sheet').count() else '')
+      p.click('[data-action="go-home"]'); p.wait_for_timeout(200)
+
       # 진짜 바둑: 집 경계가 다 정해진 판을 이어서 두고, 넘기기 → 하양이도 넘김 → 집 세기 → 더 두기 → 끝내기
       moves = []
       for y in range(9):
@@ -488,8 +524,10 @@ with sync_playwright() as pw:
       p.click('.play-card.normal'); p.wait_for_timeout(150)
       p.click('[data-action="resume"]'); p.wait_for_timeout(300)
       for x, y in [(2, 6), (6, 6), (4, 7)]:
-          if p.locator('.result-title').count(): break
+          if p.locator('[data-action="resign-accept"]').count(): break
           tap_point(p, x, y); p.click('[data-action="confirm"]'); p.wait_for_timeout(2500)
+      if p.locator('[data-action="resign-accept"]').count():
+          p.click('[data-action="resign-accept"]'); p.wait_for_timeout(300)
       ok('크게 지면 하양이가 기권 → 이겼어요', p.locator('.result-title').count() == 1 and '기권' in p.locator('.sheet').inner_text(), p.locator('.sheet').inner_text() if p.locator('.sheet').count() else '')
       shot(p, '22-ai-resign')
       ok('결과 화면에 복습 버튼', p.locator('.sheet [data-action="review-open"]').count() == 1)

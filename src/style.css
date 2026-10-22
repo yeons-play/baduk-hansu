@@ -384,3 +384,14 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
   .rv-bar { gap: 6px; }
 }
 .rv-dyn .row2 .btn { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+
+/* 이름 바꾸기 */
+.name-now { font-family: var(--body); font-size: 1rem; color: var(--sub); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-row { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.name-row > svg, .name-row > .face { flex: none; }
+.name-field { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.name-input { width: 100%; min-height: 3.4rem; padding: 0 14px; border: 3px solid var(--line2); border-radius: var(--r-md); font-family: var(--title); font-size: 1.4rem; background: transparent; color: inherit; }
+.name-input:focus { outline: none; border-color: var(--primary); }
+.name-hint { padding-left: 70px; min-height: 0; }
+.name-hint .chip { display: inline-flex; flex-direction: row; padding: 8px 14px; font-size: 1.05rem; margin-top: 6px; }
+.name-preview { margin: 14px 0 4px; padding: 12px 14px; border-radius: var(--r-md); background: #FFF8E6; color: #5B4300; font-size: 1.1rem; text-align: center; }

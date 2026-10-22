@@ -1,5 +1,6 @@
 // 읽어 주기 — 기기에 들어 있는 한국어 음성(아이패드: 유나 등) 사용, 인터넷·비용 없음
 import { loadSettings } from './storage';
+import { applyNames } from './names';
 
 let koVoice: SpeechSynthesisVoice | null | undefined;
 
@@ -41,7 +42,7 @@ export function speak(text: string, force = false): void {
     const s = window.speechSynthesis;
     if (!s) return;
     s.cancel();
-    const u = new SpeechSynthesisUtterance(toSpeech(text));
+    const u = new SpeechSynthesisUtterance(toSpeech(applyNames(text)));
     u.lang = 'ko-KR';
     u.rate = RATE[st.rate] ?? RATE.normal;
     u.pitch = 1.1;

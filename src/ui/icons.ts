@@ -16,6 +16,7 @@ const P: Record<string, string> = {
   play: '<path d="M8 5v14l11-7z"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   skip: '<path d="M5 5l8 7-8 7z"/><path d="M17 5v14"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   house: '<path d="M4 11l8-6 8 6"/><path d="M6 10v10h12V10"/><path d="M10 20v-5h4v5"/>',
 };
 

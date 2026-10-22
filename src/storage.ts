@@ -104,6 +104,8 @@ export interface Settings {
   voice: boolean;
   /** 읽어 주기 빠르기 */
   rate: 'slow' | 'normal';
+  /** 캐릭터 이름(비어 있으면 까망이·하양이). 글 속 이름 바꾸기는 `src/names.ts` */
+  names?: { black: string; white: string };
 }
 
 export function loadSettings(): Settings {

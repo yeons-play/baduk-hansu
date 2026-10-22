@@ -38,6 +38,7 @@ import {
 import { analyzeGame } from './engine/ai/review';
 import { makeSceneLesson, sceneFromMistake, SCENES_PER_GAME } from './lessons/scenes';
 import { keyCardFor, type KeyCard } from './lessons/keys';
+import { applyNames, cleanName, DEFAULT_NAMES, keepName, loadNames, NAME_MAX, suggestCall, type Names } from './names';
 import { icon } from './ui/icons';
 import { sfx, unlockAudio } from './audio';
 import { speak, stopSpeaking } from './speech';
@@ -63,9 +64,12 @@ type Sheet =
   | 'reset-lessons'
   | 'pass'
   | 'score'
-  | 'key';
+  | 'key'
+  | 'names';
 
 const ui = {
+  /** 이름 바꾸기 화면에서 고치는 중인 이름(저장 전) */
+  nameDraft: null as Names | null,
   screen: 'home' as Screen,
   sheet: null as Sheet,
   level: 1 as Level,
@@ -507,11 +511,13 @@ function showToast(text: string) {
 function render() {
   const nobar = ui.screen === 'game' || ui.screen === 'lesson' || ui.screen === 'review';
   document.body.classList.toggle('nobar', nobar);
-  app.innerHTML =
+  // 글 속 '까망이·하양이'는 여기서 한 번에 보호자가 정한 이름으로 바꾼다(src/names.ts)
+  app.innerHTML = applyNames(
     screenHTML() +
-    (nobar ? '' : tabbarHTML()) +
-    sheetHTML() +
-    (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : '');
+      (nobar ? '' : tabbarHTML()) +
+      sheetHTML() +
+      (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''),
+  );
 }
 
 function screenHTML(): string {
@@ -906,6 +912,7 @@ function sheetHTML(): string {
   } else if (ui.sheet === 'settings') {
     const st = loadSettings();
     body = `<h2>설정</h2>
+    <button class="toggle" data-action="names-open"><span>${icon('pencil')}이름 바꾸기</span><span class="name-now">까망이 · 하양이</span></button>
     <button class="toggle" data-action="toggle-sound" role="switch" aria-checked="${st.sound}"><span>${icon('play')}돌 놓는 소리·효과음</span><span class="sw ${st.sound ? 'on' : ''}"></span></button>
     <button class="toggle" data-action="toggle-voice" role="switch" aria-checked="${st.voice}"><span>${icon('speaker')}글 읽어 주기</span><span class="sw ${st.voice ? 'on' : ''}"></span></button>
     <p class="sheet-label">읽어 주기 빠르기</p>
@@ -934,6 +941,8 @@ function sheetHTML(): string {
       </div>
     </details>
     <button class="btn primary full big" data-action="close-sheet">닫기</button>`;
+  } else if (ui.sheet === 'names') {
+    body = namesSheetHTML();
   } else if (ui.sheet === 'reset-lessons') {
     body = `<h2>강의를 처음부터 할까요?</h2><p class="sheet-p">배운 강 표시가 모두 지워져요. 전적과 하던 판은 그대로예요.</p>
     <div class="row2"><button class="btn primary" data-action="settings">아니요</button><button class="btn ghost" data-action="reset-lessons">처음부터</button></div>`;
@@ -984,6 +993,7 @@ function sheetHTML(): string {
     ui.sheet === 'start' ||
     ui.sheet === 'resign' ||
     ui.sheet === 'settings' ||
+    ui.sheet === 'names' ||
     ui.sheet === 'reset-lessons' ||
     ui.sheet === 'pass' ||
     ui.sheet === 'key';
@@ -1000,6 +1010,35 @@ function readyNudgeHTML(): string {
   if (id == null || id > ready) return '';
   const what = ui.mode === 'normal' ? '진짜 바둑이' : '돌 잡기가';
   return `<div class="nudge">${icon('bulb')}<span>${ready}강까지 배우면 ${what} 더 쉬워져요!</span><button class="btn ghost" data-action="lesson-open" data-id="${id}">${id}강 배우기</button></div>`;
+}
+
+/** 이름 바꾸기: 까만 돌(나)·하얀 돌(상대). 안의 이름은 keepName으로 감싸 화면 그리기 때 바뀌지 않게 */
+function namesSheetHTML(): string {
+  const d = ui.nameDraft ?? loadNames();
+  const row = (who: 'black' | 'white', label: string) => `<label class="name-row">${stoneFace(who, 56, 'happy')}
+      <span class="name-field"><span class="sheet-label">${label}</span>
+      <input class="name-input" data-who="${who}" type="text" maxlength="${NAME_MAX + 1}" autocomplete="off" enterkeyhint="done"
+        value="${keepName(esc(d[who]))}" placeholder="${keepName(DEFAULT_NAMES[who])}" /></span></label>
+    <div class="name-hint" data-for="${who}">${keepName(nameHintHTML(who, d[who]))}</div>`;
+  return `<h2>이름 바꾸기</h2>
+    <p class="sheet-p small">아이 이름으로 바꾸면 강의·대국·읽어 주기에 모두 그 이름이 나와요. 까만 돌이 나예요.</p>
+    ${row('black', '까만 돌(나)')}
+    ${row('white', '하얀 돌(상대)')}
+    <p class="name-preview" id="name-preview">${keepName(esc(namePreview(d)))}</p>
+    <div class="row2"><button class="btn ghost" data-action="names-reset">원래대로</button><button class="btn primary" data-action="names-save">저장</button></div>`;
+}
+
+/** '민준'처럼 받침으로 끝나면 '민준이로 부를까요?' 버튼 */
+function nameHintHTML(who: 'black' | 'white', name: string): string {
+  const call = suggestCall(cleanName(name));
+  return call
+    ? `<button class="chip on" data-action="name-call" data-who="${who}" data-name="${esc(call)}">‘${esc(call)}’로 부를까요?</button>`
+    : '';
+}
+
+function namePreview(d: Names): string {
+  const n = { black: cleanName(d.black) || DEFAULT_NAMES.black, white: cleanName(d.white) || DEFAULT_NAMES.white };
+  return applyNames('까망이가 하양이를 잡았어요! 하양이는 덤을 받아요.', n);
 }
 
 /** 받침에 따라 을/를 */
@@ -1101,8 +1140,38 @@ app.addEventListener('click', (ev) => {
       break;
     }
     case 'settings':
+      ui.nameDraft = null;
       ui.sheet = 'settings';
       break;
+    case 'names-open':
+      ui.nameDraft = loadNames();
+      ui.sheet = 'names';
+      break;
+    case 'name-call': {
+      const who = el.dataset.who === 'white' ? 'white' : 'black';
+      ui.nameDraft = { ...(ui.nameDraft ?? loadNames()), [who]: cleanName(el.dataset.name ?? '') };
+      break;
+    }
+    case 'names-reset':
+      ui.nameDraft = { ...DEFAULT_NAMES };
+      break;
+    case 'names-save': {
+      const d = ui.nameDraft ?? loadNames();
+      const black = cleanName(d.black) || DEFAULT_NAMES.black;
+      const white = cleanName(d.white) || DEFAULT_NAMES.white;
+      if (black === white) {
+        showToast('두 이름을 다르게 지어 주세요');
+        return;
+      }
+      const st = loadSettings();
+      if (black === DEFAULT_NAMES.black && white === DEFAULT_NAMES.white) delete st.names;
+      else st.names = { black, white };
+      saveSettings(st);
+      ui.nameDraft = null;
+      ui.sheet = 'settings';
+      speak('까망이랑 하양이, 바둑 한 판 두자!');
+      break;
+    }
     case 'toggle-sound': {
       const st = loadSettings();
       st.sound = !st.sound;
@@ -1196,6 +1265,7 @@ app.addEventListener('click', (ev) => {
       break;
     case 'close-sheet':
       ui.sheet = null;
+      ui.nameDraft = null;
       break;
     case 'close-rules':
       markRulesSeen(ui.game?.rules.mode ?? 'capture');
@@ -1266,11 +1336,21 @@ async function shareBackup() {
 
 app.addEventListener('input', (ev) => {
   const input = ev.target as HTMLInputElement;
+  // 이름 바꾸기: 다시 그리면 키보드가 닫히므로 미리보기·'~이로 부를까요?'만 바꾼다
+  if (input.classList.contains('name-input') && ui.sheet === 'names') {
+    const who = input.dataset.who === 'white' ? 'white' : 'black';
+    ui.nameDraft = { ...(ui.nameDraft ?? loadNames()), [who]: input.value };
+    const pv = app.querySelector('#name-preview');
+    if (pv) pv.textContent = namePreview(ui.nameDraft);
+    const hint = app.querySelector(`.name-hint[data-for="${who}"]`);
+    if (hint) hint.innerHTML = nameHintHTML(who, input.value);
+    return;
+  }
   if (!input.classList.contains('rv-seek') || !ui.review) return;
   reviewSeek(ui.review, Number(input.value));
   // 끄는 중에는 슬라이더는 그대로 두고 바둑판·수 세기·설명만 바꾼다(전체를 다시 그리면 손가락이 끊김)
   const tmp = document.createElement('div');
-  tmp.innerHTML = reviewHTML(ui.review);
+  tmp.innerHTML = applyNames(reviewHTML(ui.review));
   for (const sel of ['.board-wrap', '.rv-bar', '.rv-dyn']) {
     const now = app.querySelector(sel);
     const next = tmp.querySelector(sel);

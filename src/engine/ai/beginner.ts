@@ -291,9 +291,9 @@ function isInvader(game: Game, stones: number[], me: Stone): boolean {
  * 값이 ±INFL_T 이상이면 그쪽 세력권으로 본다. 집 계산이 아니라 '어디가 넓은 곳인지' 고르는 데만 쓴다.
  */
 const INFL_R = 3;
-const INFL_T = 3;
+export const INFL_T = 3;
 
-function influence(game: Game): Int16Array {
+export function influence(game: Game): Int16Array {
   const n = game.geo.n;
   const size = game.size;
   const infl = new Int16Array(n);

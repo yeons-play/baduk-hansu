@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BLACK, WHITE, Game } from '../src/engine/rules';
 import { chooseMove, type Level } from '../src/engine/ai/beginner';
 import { estimateDead } from '../src/engine/ai/dead';
-import { hopeless } from '../src/engine/ai/resign';
+import { hopeless, moyoMargin } from '../src/engine/ai/resign';
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -39,6 +39,30 @@ describe('하양이 기권', () => {
     for (let i = 0; i < 3; i++) expect(hopeless(g, WHITE, { rand: rng(i) })).toBe(true);
     expect(hopeless(g, BLACK, { rand: rng(9) })).toBe(false); // 이기는 쪽은 당연히 아님
   }, 20000);
+
+  it('넓게 벌린 땅이 남아 있으면 기권하지 않는다(13줄 실제 판: 흑이 앞서지만 10집 안팎, 무작위 두어 보기는 59집으로 봄)', () => {
+    const g = Game.fromDiagram(
+      [
+        '. . O X X O . . . . . . .',
+        '. X X X O O . . . O . O .',
+        '. X X O . . . O . . . O .',
+        '. . X O . O . . . O . . .',
+        'X X . X O . . . . . . . .',
+        'X . . X X O . O X . . O .',
+        'X . . X O . . . X O . . O',
+        'X X . X O . . O X O O O X',
+        'O O X X X O . O X O X O X',
+        'O X X X O O O X X X X X X',
+        'O O O X X O X . X . . . .',
+        '. O X X O X X . X . . . .',
+        '. X . X O . X . X . . . .',
+      ],
+      WHITE,
+      { mode: 'normal' },
+    );
+    expect(moyoMargin(g, WHITE)).toBeGreaterThan(-g.geo.n * 0.15);
+    for (let i = 0; i < 5; i++) expect(hopeless(g, WHITE, { rand: rng(i) })).toBe(false);
+  });
 
   it('판이 덜 찼거나 따내기 바둑이면 기권하지 않는다', () => {
     const g = new Game({ size: 9, mode: 'normal' });

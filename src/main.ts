@@ -65,7 +65,8 @@ type Sheet =
   | 'pass'
   | 'score'
   | 'key'
-  | 'names';
+  | 'names'
+  | 'resign-offer';
 
 const ui = {
   /** 이름 바꾸기 화면에서 고치는 중인 이름(저장 전) */
@@ -93,6 +94,8 @@ const ui = {
   dead: [] as number[],
   /** 하양이가 '많이 지고 있다'고 본 연속 횟수(두 번 연속이면 기권) */
   hopelessStreak: 0,
+  /** 이번 판에서 하양이의 기권을 '끝까지 둘래요'로 거절했는지(한 판에 한 번만 묻는다) */
+  resignDeclined: false,
   /** 방금 끝난 판의 기록 번호(결과 화면에서 바로 복습) */
   lastFinishedId: 0,
   /** 복습 중인 판과 보고 있는 수(0 = 빈 판) */
@@ -168,6 +171,7 @@ function newGame(level: Level, target: Target) {
   ui.level = level;
   ui.target = target;
   ui.hopelessStreak = 0;
+  ui.resignDeclined = false;
   resetMarks();
   persist();
 }
@@ -200,6 +204,7 @@ function resumeGame(): boolean {
   ui.game = g;
   ui.setup = saved.setup ?? null;
   ui.hopelessStreak = 0;
+  ui.resignDeclined = false;
   ui.level = saved.level;
   ui.mode = saved.mode;
   if (saved.mode === 'capture' && SIZES.includes(saved.size as BoardSize)) ui.size = saved.size as BoardSize;
@@ -271,14 +276,17 @@ function scheduleAI() {
       ui.aiThinking = false;
       return;
     }
-    // 진짜 바둑에서 크게 지고 있으면(두 번 연속 그렇게 보이면) 하양이가 기권한다
-    if (game.rules.mode === 'normal') {
+    // 진짜 바둑에서 크게 지고 있으면(두 번 연속 그렇게 보이면) 하양이가 기권을 청한다.
+    // 갑자기 끝나면 아이가 당황하므로 받을지·끝까지 둘지 묻는다(한 판에 한 번만)
+    if (game.rules.mode === 'normal' && !ui.resignDeclined) {
       ui.hopelessStreak = hopeless(game, game.toMove) ? ui.hopelessStreak + 1 : 0;
       if (ui.hopelessStreak >= 2) {
         ui.hopelessStreak = 0;
-        game.resign();
         ui.aiThinking = false;
-        return finishGame();
+        ui.sheet = 'resign-offer';
+        render();
+        speak('하양이가 제가 졌어요 하고 인사했어요. 받아 줄까요, 더 둘까요?');
+        return;
       }
     }
     const c = chooseMove(game, { level: ui.level });
@@ -941,6 +949,12 @@ function sheetHTML(): string {
       </div>
     </details>
     <button class="btn primary full big" data-action="close-sheet">닫기</button>`;
+  } else if (ui.sheet === 'resign-offer') {
+    body = `<div class="result-face">${stoneFace('white', 110, 'oops')}</div>
+    <h2 class="result-title">하양이가 인사했어요</h2>
+    <p class="sheet-p center">${rich('하양이가 “제가 졌어요” 하고 고개를 숙였어요(기권). 바둑에서는 많이 지고 있으면 이렇게 인사하고 끝내요.')}</p>
+    <p class="sheet-p center small">받으면 까망이가 이겨요. 더 두고 싶으면 끝까지 두고 집을 세어도 돼요.</p>
+    <div class="row2"><button class="btn ghost" data-action="resign-decline">더 둘래요</button><button class="btn primary" data-action="resign-accept">받을래요!</button></div>`;
   } else if (ui.sheet === 'names') {
     body = namesSheetHTML();
   } else if (ui.sheet === 'reset-lessons') {
@@ -1286,6 +1300,19 @@ app.addEventListener('click', (ev) => {
     case 'ask-resign':
       ui.sheet = 'resign';
       break;
+    case 'resign-accept': {
+      const g = ui.game;
+      ui.sheet = null;
+      if (!g || g.isOver || g.toMove === HUMAN) break;
+      g.resign(); // 하양이 차례에 기권 → 하양이가 진다
+      return finishGame();
+    }
+    case 'resign-decline':
+      ui.sheet = null;
+      ui.resignDeclined = true;
+      render();
+      scheduleAI();
+      return;
     case 'resign':
       ui.sheet = null;
       // 그만하기는 까망이 차례에만(하양이 차례에 누르면 하양이가 그만둔 것으로 처리되는 문제 방지)

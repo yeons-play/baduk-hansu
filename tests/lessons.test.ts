@@ -168,6 +168,17 @@ describe('기초 강의 데이터', () => {
     expect(R(11, 4).answer).toBe(1);
   });
 
+  it('12강: 죽은 돌은 셀 때 뺀다고 가르친다(사석 규칙) — "그냥 두면 집이 없어진다"는 옛 설명은 없음', () => {
+    const i = L(12).steps.findIndex((s) => s.kind === 'choice' && s.text.includes('죽은 돌'));
+    expect(i).toBeGreaterThanOrEqual(0);
+    const s = L(12).steps[i];
+    if (s.kind !== 'choice') throw new Error('choice 단계가 아님');
+    expect(s.options[R(12, i).answer]).toContain('빼');
+    for (const l of [L(11), L(12)])
+      for (const st of l.steps)
+        for (const t of [st.text, 'done' in st ? st.done : '', 'wrong' in st ? st.wrong : '']) expect(t).not.toMatch(/집이 없어/);
+  });
+
   it('2강 "다음 차례" 정답은 하양이', () => {
     expect(R(2, 3).answer).toBe(1);
   });

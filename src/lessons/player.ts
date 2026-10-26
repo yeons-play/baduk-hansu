@@ -31,6 +31,8 @@ export class LessonPlayer {
     private rerender: () => void,
     /** 연습에서 같은 문제를 두 번 틀렸을 때(핵심 그림 보여 주기) */
     private onStuck?: (step: Step) => void,
+    /** 연습 문제를 하나 풀었을 때(한 번에 맞혔는지 — 보호자 요약용 기록) */
+    private onSolved?: (step: Step, firstTry: boolean) => void,
   ) {
     this.enter(0);
   }
@@ -96,6 +98,7 @@ export class LessonPlayer {
     this.miss = null;
     sfx('correct');
     speak(this.feedback.text);
+    if (this.lesson.practice) this.onSolved?.(this.step, this.misses === 0);
   }
 
   private no(text: string, miss: number | null = null) {

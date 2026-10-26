@@ -32,9 +32,15 @@ import {
   loadScenes,
   addScenes,
   removeScene,
+  addGameLog,
+  loadGameLog,
+  loadPracticeLog,
   type GameSetup,
   type SavedScene,
 } from './storage';
+import { ensureGameLog, logPractice, summarize } from './records';
+import { summaryHTML } from './summary';
+import { LEVELS } from './levels';
 import { analyzeGame } from './engine/ai/review';
 import { makeSceneLesson, sceneFromMistake, SCENES_PER_GAME } from './lessons/scenes';
 import { keyCardFor, type KeyCard } from './lessons/keys';
@@ -66,7 +72,8 @@ type Sheet =
   | 'score'
   | 'key'
   | 'names'
-  | 'resign-offer';
+  | 'resign-offer'
+  | 'summary';
 
 const ui = {
   /** 이름 바꾸기 화면에서 고치는 중인 이름(저장 전) */
@@ -108,6 +115,11 @@ const ui = {
   praise: '',
   /** 연습에서 두 번 틀렸을 때 보여 줄 핵심 그림 */
   keyCard: null as KeyCard | null,
+  /** 이 판에서 도와줘·되돌리기를 쓴 횟수(보호자 요약용, 이어 두어도 이어서 셈) */
+  hints: 0,
+  undos: 0,
+  /** 기록 요약에서 고른 기간(일, 0 = 전체) */
+  summaryDays: 7,
 };
 
 const HUMAN = BLACK;
@@ -153,13 +165,6 @@ const NORMAL_SIZES: NormalSize[] = [9, 13];
 /** 이 강까지 배우면 준비 끝: 따내기 바둑은 6강(단수·잡기·도망가기), 진짜 바둑은 12강 */
 const READY_LESSON: Record<GameMode, number> = { capture: 6, normal: 12 };
 
-const LEVELS: Record<Level, { name: string; stars: string }> = {
-  1: { name: '쉬워요', stars: '★' },
-  2: { name: '보통', stars: '★★' },
-  3: { name: '어려워요', stars: '★★★' },
-};
-
-
 // ───────── 대국 진행 ─────────
 
 function newGame(level: Level, target: Target) {
@@ -172,6 +177,8 @@ function newGame(level: Level, target: Target) {
   ui.target = target;
   ui.hopelessStreak = 0;
   ui.resignDeclined = false;
+  ui.hints = 0;
+  ui.undos = 0;
   resetMarks();
   persist();
 }
@@ -205,6 +212,8 @@ function resumeGame(): boolean {
   ui.setup = saved.setup ?? null;
   ui.hopelessStreak = 0;
   ui.resignDeclined = false;
+  ui.hints = typeof saved.hints === 'number' ? saved.hints : 0;
+  ui.undos = typeof saved.undos === 'number' ? saved.undos : 0;
   ui.level = saved.level;
   ui.mode = saved.mode;
   if (saved.mode === 'capture' && SIZES.includes(saved.size as BoardSize)) ui.size = saved.size as BoardSize;
@@ -232,6 +241,8 @@ function persist() {
     moves: g.moves.map((m) => (m.type === 'play' ? m.point : -1)),
     ...(ui.setup ? { setup: ui.setup } : {}),
     ...(scoring ? { dead: ui.dead } : {}),
+    hints: ui.hints,
+    undos: ui.undos,
     savedAt: new Date().toISOString(),
   });
 }
@@ -426,6 +437,9 @@ function finishGame() {
   addScenes(scenes);
   ui.lastScenes = scenes;
   ui.praise = praiseText(good);
+  // 보호자 요약용 한 줄 기록: 처음이면 남아 있는 다시 보기 기록으로 먼저 채운 뒤 이 판을 더한다
+  ensureGameLog();
+  const endedAt = new Date(id).toISOString();
   addHistory({
     v: 1,
     id,
@@ -437,10 +451,30 @@ function finishGame() {
     moves,
     good,
     missed,
+    hints: ui.hints,
+    undos: ui.undos,
     outcome,
     reason: res.reason,
     summary: historySummary(g),
-    endedAt: new Date(id).toISOString(),
+    endedAt,
+  });
+  addGameLog({
+    v: 1,
+    id,
+    endedAt,
+    mode: g.rules.mode,
+    size: g.size,
+    level: ui.level,
+    captureTarget: g.rules.captureTarget,
+    outcome,
+    reason: res.reason,
+    moves: moves.length,
+    hints: ui.hints,
+    undos: ui.undos,
+    good,
+    missed,
+    ...(res.reason === 'score' ? { margin: res.score.margin } : {}),
+    ...(ui.setup ? { setup: true } : {}),
   });
   ui.lastFinishedId = id;
   ui.sheet = 'result';
@@ -468,6 +502,7 @@ function undoTurn() {
   } while (g.moves.length && g.toMove !== HUMAN);
   if (g.toMove !== HUMAN) g.undo();
   ui.hopelessStreak = 0;
+  ui.undos++;
   resetMarks();
   persist();
   render();
@@ -480,9 +515,11 @@ function showHint() {
   if (c.point == null) {
     return showToast(g.rules.mode === 'normal' ? '이제 놓을 곳이 거의 없어요. 차례 넘기기를 눌러도 돼요' : '놓을 곳이 없어요');
   }
+  if (ui.hint == null) ui.hints++; // 한 차례에 여러 번 눌러도 한 번으로 센다
   ui.hint = c.point;
   ui.hintText = HINT_TEXT[c.reason];
   ui.preview = null;
+  persist();
   speak(ui.hintText);
   render();
 }
@@ -789,13 +826,19 @@ function startLesson(l: Lesson) {
   ui.lesson?.stop();
   ui.sheet = null;
   ui.screen = 'lesson';
-  ui.lesson = new LessonPlayer(l, render, (step) => {
-    const card = keyCardFor(step);
-    if (!card) return;
-    ui.keyCard = card;
-    ui.sheet = 'key';
-    speak(card.text);
-  });
+  ui.lesson = new LessonPlayer(
+    l,
+    render,
+    (step) => {
+      const card = keyCardFor(step);
+      if (!card) return;
+      ui.keyCard = card;
+      ui.sheet = 'key';
+      speak(card.text);
+    },
+    // 연습 문제를 하나 풀 때마다 한 번에 맞혔는지 남긴다(보호자 요약)
+    (step, firstTry) => logPractice(step, firstTry),
+  );
 }
 
 function tabbarHTML(): string {
@@ -941,6 +984,7 @@ function sheetHTML(): string {
     <details class="parent">
       <summary>보호자용</summary>
       <div class="parent-in">
+        <button class="btn ghost full" data-action="summary-open">${icon('chart')}기록 요약 보기</button>
         <button class="btn ghost full" data-action="backup-export">기록 백업하기</button>
         <button class="btn ghost full" data-action="backup-import">기록 불러오기</button>
         <input type="file" id="backup-file" accept="application/json,.json" hidden />
@@ -957,6 +1001,10 @@ function sheetHTML(): string {
     <div class="row2"><button class="btn ghost" data-action="resign-decline">더 둘래요</button><button class="btn primary" data-action="resign-accept">받을래요!</button></div>`;
   } else if (ui.sheet === 'names') {
     body = namesSheetHTML();
+  } else if (ui.sheet === 'summary') {
+    const lp = loadLessons();
+    const s = summarize(loadGameLog(), loadPracticeLog(), lp.at, new Date(), ui.summaryDays || null);
+    body = summaryHTML(s, ui.summaryDays, lp.done.length, LESSONS.length);
   } else if (ui.sheet === 'reset-lessons') {
     body = `<h2>강의를 처음부터 할까요?</h2><p class="sheet-p">배운 강 표시가 모두 지워져요. 전적과 하던 판은 그대로예요.</p>
     <div class="row2"><button class="btn primary" data-action="settings">아니요</button><button class="btn ghost" data-action="reset-lessons">처음부터</button></div>`;
@@ -1008,6 +1056,7 @@ function sheetHTML(): string {
     ui.sheet === 'resign' ||
     ui.sheet === 'settings' ||
     ui.sheet === 'names' ||
+    ui.sheet === 'summary' ||
     ui.sheet === 'reset-lessons' ||
     ui.sheet === 'pass' ||
     ui.sheet === 'key';
@@ -1206,6 +1255,16 @@ app.addEventListener('click', (ev) => {
       st.rate = el.dataset.rate === 'slow' ? 'slow' : 'normal';
       saveSettings(st);
       speak('이 빠르기로 읽어 줄게요');
+      break;
+    }
+    case 'summary-open':
+      ensureGameLog(); // 처음 열면 남아 있는 최근 판들로 채운다
+      ui.summaryDays = 7;
+      ui.sheet = 'summary';
+      break;
+    case 'summary-days': {
+      const d = Number(el.dataset.days);
+      ui.summaryDays = d === 7 || d === 30 || d === 0 ? d : 7;
       break;
     }
     case 'ask-reset-lessons':

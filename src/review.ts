@@ -4,6 +4,7 @@ import { toXY } from './engine/rules';
 import { findMistakes, replay, type Mistake, type MistakeKind } from './engine/ai/review';
 import { LESSONS } from './lessons/data';
 import { rich } from './lessons/player';
+import { levelLabel } from './levels';
 import type { FinishedGame } from './storage';
 import { renderBoard } from './ui/board';
 import { icon } from './ui/icons';
@@ -145,7 +146,7 @@ export function historyItemHTML(g: FinishedGame): string {
   const tag = g.outcome === 'win' ? '<span class="badge ok">이김</span>' : g.outcome === 'loss' ? '<span class="badge">짐</span>' : '<span class="badge">비김</span>';
   return `<li><button class="lesson" data-action="review-open" data-id="${g.id}">
     <span class="lnum">${g.size}</span>
-    <span class="ltitle">${g.mode === 'normal' ? '진짜 바둑' : '따내기 바둑'}<small class="lgoal">${when} · ${g.summary}${n ? ` · 놓친 장면 ${n}개` : ''}</small></span>
+    <span class="ltitle">${g.mode === 'normal' ? '진짜 바둑' : '따내기 바둑'}<small class="lgoal">하양이 ${levelLabel(g.level)} · ${when} · ${g.summary}${n ? ` · 놓친 장면 ${n}개` : ''}</small></span>
     ${tag}
   </button></li>`;
 }

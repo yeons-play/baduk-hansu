@@ -141,6 +141,9 @@ with sync_playwright() as pw:
       p.click('[data-action="go-home"]')
       p.wait_for_timeout(200)
       ok('기록에 1패 반영', '1' in p.locator('.stat-row .stat').nth(2).inner_text())
+      # 보호자 요약용 한 줄 기록: 도와줘 1번·되돌리기 1번(나갔다가 이어 두어도 이어서 셈)
+      log = p.evaluate("JSON.parse(localStorage.getItem('baduk-game-log') || '[]')")
+      ok('한 줄 기록에 도와줘·되돌리기 횟수', len(log) == 1 and log[0].get('hints') == 1 and log[0].get('undos') == 1 and log[0].get('level') == 1, log[:1])
 
       # 배우기 탭
       p.click('.tabbar [data-tab="learn"]')
@@ -437,6 +440,8 @@ with sync_playwright() as pw:
       ok('연습 5문제 다 풀기', solved == 5 and p.locator('.sheet .result-title').count() == 1, solved)
       ok('연습은 강의 진도에 안 들어감', p.evaluate("JSON.parse(localStorage.getItem('baduk-lessons')).done.length") == 5)
       ok('연습 횟수 저장', p.evaluate("JSON.parse(localStorage.getItem('baduk-practice')).done.capture") == 1)
+      plog = p.evaluate("JSON.parse(localStorage.getItem('baduk-practice-log') || '{}')")
+      ok('문제 기록: 오늘 잡기 5문제(한 번에 맞힌 수 포함)', sum(d.get('capture', [0, 0])[0] for d in plog.values()) == 5 and all(0 <= d['capture'][1] <= d['capture'][0] for d in plog.values() if 'capture' in d), plog)
       p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(200)
       ok('목록에 한 번 했어요 표시', '1번 했어요' in p.locator('.lessons').inner_text())
       # 사활 연습(9강 뒤): 죽이기 5문제
@@ -537,6 +542,7 @@ with sync_playwright() as pw:
       ok('끝으로 가면 마지막 수', p.locator('.rv-count b').inner_text() == p.locator('.rv-seek').get_attribute('max'))
       p.click('[data-action="tab"][data-tab="record"]'); p.wait_for_timeout(200)
       ok('기록 탭에 지난 판 목록', p.locator('[data-action="review-open"]').count() >= 1)
+      ok('기록 목록에 하양이 단계', '★ 쉬워요' in p.locator('.lessons').inner_text())
 
       # 복습: 놓친 장면(잡을 수 있었는데 다른 곳에 둠) — 5줄 따내기 바둑 기록을 직접 넣고 확인
       P = lambda x, y: y * 5 + x
@@ -561,6 +567,20 @@ with sync_playwright() as pw:
       p.click('[data-action="settings"]'); p.wait_for_timeout(150)
       p.click('[data-action="rate"][data-rate="slow"]'); p.wait_for_timeout(100)
       ok('읽어 주기 천천히 저장', p.evaluate("JSON.parse(localStorage.getItem('baduk-settings')).rate") == 'slow')
+      # 보호자용 기록 요약: 판 크기·단계별 대국, 도와줘·되돌리기, 문제 놀이 정답 비율
+      p.click('details.parent summary'); p.wait_for_timeout(100)
+      p.click('[data-action="summary-open"]'); p.wait_for_timeout(200)
+      ok('보호자 기록 요약 열림', '기록 요약' in p.locator('.sheet h2').inner_text())
+      ok('요약: 판 크기·단계별 대국 줄 여러 개', p.locator('.sheet .sum-table').first.locator('tbody tr').count() >= 2)
+      txt = p.locator('.sheet').inner_text()
+      ok('요약: 도와줘·되돌리기 판마다', '판마다 도와줘' in txt, txt[:200])
+      ok('요약: 문제 놀이 기술별(잡기·두 집 막기)', '한 수로 잡기' in txt and '두 집 막기' in txt, txt[-400:])
+      shot(p, '27-summary')
+      p.click('[data-action="summary-days"][data-days="0"]'); p.wait_for_timeout(150)
+      ok('요약: 전체 기간 고르기', p.locator('[data-action="summary-days"][data-days="0"]').get_attribute('aria-checked') == 'true')
+      p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(100)
+      ok('요약 닫기', p.locator('.sheet').count() == 0)
+      p.click('[data-action="settings"]'); p.wait_for_timeout(150)
       p.click('details.parent summary'); p.click('[data-action="ask-reset-lessons"]'); p.wait_for_timeout(100)
       p.click('[data-action="reset-lessons"]'); p.wait_for_timeout(150)
       ok('강의 처음부터', p.evaluate("localStorage.getItem('baduk-lessons')") is None)

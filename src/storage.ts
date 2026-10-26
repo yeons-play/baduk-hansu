@@ -24,6 +24,9 @@ export interface SavedGame {
   moves: number[];
   /** 둘 다 넘겨 집 세기 화면에 있을 때: 고른 죽은 돌(앱을 닫았다 열어도 그대로) */
   dead?: number[];
+  /** 이 판에서 도와줘·되돌리기를 쓴 횟수(이어 두어도 이어서 센다) */
+  hints?: number;
+  undos?: number;
   savedAt: string;
 }
 
@@ -122,15 +125,21 @@ export interface LessonProgress {
   v: 1;
   /** 끝낸 강 번호 */
   done: number[];
+  /** 강마다 처음 끝낸 때(ISO). 이 기록을 남기기 전에 끝낸 강은 없음 */
+  at?: Record<string, string>;
 }
 
 export function loadLessons(): LessonProgress {
   const p = read<LessonProgress>(KEY_LESSONS);
   return p && Array.isArray(p.done) ? p : { v: 1, done: [] };
 }
-export function markLessonDone(id: number): LessonProgress {
+export function markLessonDone(id: number, now = new Date()): LessonProgress {
   const p = loadLessons();
-  if (!p.done.includes(id)) p.done.push(id);
+  if (!p.done.includes(id)) {
+    p.done.push(id);
+    // 처음 끝낸 날만 적는다(다시 본 강은 날짜를 바꾸지 않음)
+    p.at = { ...(p.at && typeof p.at === 'object' ? p.at : {}), [String(id)]: now.toISOString() };
+  }
   write(KEY_LESSONS, p);
   return p;
 }
@@ -155,6 +164,9 @@ export interface FinishedGame {
   good?: { capture: number; escape: number };
   /** 놓친 장면 종류별 횟수 */
   missed?: Record<string, number>;
+  /** 도와줘·되돌리기를 쓴 횟수 */
+  hints?: number;
+  undos?: number;
   mode: GameMode;
   size: number;
   level: Level;
@@ -176,6 +188,86 @@ export function loadHistory(): FinishedGame[] {
 /** 새 판을 맨 앞에 넣고 오래된 판은 지운다 */
 export function addHistory(g: FinishedGame): void {
   write(KEY_HISTORY, [g, ...loadHistory().filter((h) => h.id !== g.id)].slice(0, HISTORY_MAX));
+}
+
+// ───────── 한 줄 기록(보호자 요약용) ─────────
+// 다시 보기 기록(baduk-history)은 수순까지 담아 최근 20판만 남긴다. 실력이 느는지 보려면 더 오래 봐야 해서
+// 수순 없이 판마다 한 줄씩 따로 남긴다(1000판이어도 수백 KB 안쪽).
+const KEY_GAME_LOG = 'baduk-game-log';
+export const GAME_LOG_MAX = 1000;
+
+export interface GameLogEntry {
+  v: 1;
+  /** 끝난 시각 밀리초(다시 보기 기록의 id와 같음) */
+  id: number;
+  endedAt: string;
+  mode: GameMode;
+  size: number;
+  level: Level;
+  captureTarget: number;
+  outcome: 'win' | 'loss' | 'draw';
+  /** capture 먼저 잡음, score 집 세기, resign 기권(이기면 하양이 기권, 지면 까망이 그만하기), no-capture 둘 다 넘김 */
+  reason: string;
+  /** 둔 수(넘기기 포함) */
+  moves: number;
+  /** 도와줘·되돌리기를 쓴 횟수(이 기록을 남기기 전에 끝난 판에는 없음) */
+  hints?: number;
+  undos?: number;
+  /** 잘한 수(잡기·도망가기)와 놓친 장면 종류별 횟수 */
+  good?: { capture: number; escape: number };
+  missed?: Record<string, number>;
+  /** 집 세기로 끝난 판: 까망이 기준 점수 차(덤 포함, 양수면 까망이가 이김) */
+  margin?: number;
+  /** 출발 판 놀이(빈 판이 아닌 배치에서 시작) */
+  setup?: boolean;
+}
+
+/** 한 줄 기록을 만든 적이 있는지(없으면 처음 한 번은 남아 있는 다시 보기 기록으로 채운다) */
+export const hasGameLog = (): boolean => read<unknown>(KEY_GAME_LOG) !== null;
+
+export function loadGameLog(): GameLogEntry[] {
+  const g = read<GameLogEntry[]>(KEY_GAME_LOG);
+  return Array.isArray(g)
+    ? g.filter((e) => e && e.v === 1 && typeof e.id === 'number' && typeof e.endedAt === 'string' && typeof e.outcome === 'string')
+    : [];
+}
+/** 새것부터, 최대 개수까지만 */
+export function saveGameLog(list: GameLogEntry[]): void {
+  write(KEY_GAME_LOG, [...list].sort((a, b) => b.id - a.id).slice(0, GAME_LOG_MAX));
+}
+export function addGameLog(e: GameLogEntry): void {
+  saveGameLog([e, ...loadGameLog().filter((x) => x.id !== e.id)]);
+}
+
+// ───────── 문제 놀이 기록(날짜·기술별) ─────────
+const KEY_PRACTICE_LOG = 'baduk-practice-log';
+/** 남겨 두는 날 수(문제를 푼 날만 센다) */
+export const PRACTICE_LOG_DAYS = 400;
+
+/** 날짜(이 기기 시간 YYYY-MM-DD) → 기술 → [푼 문제 수, 한 번에 맞힌 수] */
+export type PracticeLog = Record<string, Record<string, [number, number]>>;
+
+/** 이 기기 시간으로 날짜 이름(YYYY-MM-DD) */
+export function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function loadPracticeLog(): PracticeLog {
+  const p = read<PracticeLog>(KEY_PRACTICE_LOG);
+  return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+}
+/** 문제 하나를 끝까지 풀 때마다: 그 기술을 푼 수 +1, 한 번에 맞혔으면 맞힌 수도 +1 */
+export function addPracticeResult(skill: string, firstTry: boolean, now = new Date()): void {
+  const log = loadPracticeLog();
+  const k = dayKey(now);
+  const day = log[k] && typeof log[k] === 'object' ? log[k] : {};
+  const cur = day[skill];
+  const [n, ok] = Array.isArray(cur) && cur.length === 2 ? cur : [0, 0];
+  day[skill] = [n + 1, ok + (firstTry ? 1 : 0)];
+  log[k] = day;
+  const days = Object.keys(log).sort();
+  for (const old of days.slice(0, Math.max(0, days.length - PRACTICE_LOG_DAYS))) delete log[old];
+  write(KEY_PRACTICE_LOG, log);
 }
 
 // ───────── 지난 판에서 놓친 장면(내 문제) ─────────

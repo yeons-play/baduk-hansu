@@ -20,6 +20,8 @@ export interface BoardView {
   dead?: number[];
   /** 방금 잡혀 들어낸 돌: 잠깐 흐리게 보여 준다(그 자리에 새 돌이 있으면 그리지 않음) */
   ghosts?: { p: number; c: number }[];
+  /** 잡힌 뒤 지난 시간(ms). 다시 그려도 사라지는 움직임을 이어서 보여 주려고 */
+  ghostAge?: number;
   /** 반짝이는 네모 구역 [x0, y0, x1, y1](도와줘 2단계 '어디쯤') */
   zone?: [number, number, number, number] | null;
 }
@@ -94,7 +96,8 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
   for (const { p, c: color } of view.ghosts ?? []) {
     if (game.at(p) !== EMPTY) continue;
     const [x, y] = toXY(size, p);
-    stones += `<g class="ghost"><circle cx="${c(x)}" cy="${c(y)}" r="${r.toFixed(1)}" fill="url(#${color === BLACK ? 'gb' : 'gw'})"/><circle cx="${c(x)}" cy="${c(y)}" r="${(r - 1).toFixed(1)}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-dasharray="5 4"/></g>`;
+    // 잡힌 돌: 판에서 집어 올리듯 작아지며 사라짐(테두리·엑스 없이 돌 그대로)
+    stones += `<circle class="captured" style="animation-delay:-${Math.max(0, Math.round(view.ghostAge ?? 0))}ms" cx="${c(x)}" cy="${c(y)}" r="${r.toFixed(1)}" fill="url(#${color === BLACK ? 'gb' : 'gw'})"/>`;
   }
 
   let marks = '';

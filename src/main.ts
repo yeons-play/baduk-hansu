@@ -141,6 +141,8 @@ const ui = {
   warn: false,
   /** 방금 잡혀 들어낸 돌(잠깐 흐리게 보여 줌) */
   ghosts: [] as { p: number; c: Stone }[],
+  /** 잡힌 시각(다시 그려도 사라지는 움직임이 처음부터 다시 시작하지 않게) */
+  ghostAt: 0,
   /** 알림을 읽어 준 판(같은 판에서 두 번 읽지 않게) */
   alertSpoken: '',
   /** 설정의 '보호자용'을 펼쳐 두었는지(켜고 끄기를 누르면 화면을 다시 그려도 닫히지 않게) */
@@ -151,8 +153,10 @@ const ui = {
 
 const HUMAN = BLACK;
 const AI_DELAY = 550;
-/** 잡힌 돌을 흐리게 보여 주는 시간, 따내기 바둑이 잡기로 끝나면 결과 창을 이만큼 늦게 띄운다 */
-const GHOST_MS = 1300;
+/** 잡힌 돌이 작아지며 사라지는 시간(CSS ghost-out과 같게) */
+const GHOST_MS = 550;
+/** 따내기 바둑이 잡기로 끝나면 돌이 사라지는 것을 본 뒤 결과 창 */
+const END_DELAY_MS = 900;
 let aiTimer: number | undefined;
 let toastTimer: number | undefined;
 let ghostTimer: number | undefined;
@@ -314,6 +318,7 @@ function announceAlerts() {
 function showGhosts(captured: number[], mover: Stone) {
   if (!captured.length) return;
   ui.ghosts = captured.map((p) => ({ p, c: opponent(mover) }));
+  ui.ghostAt = Date.now();
   window.clearTimeout(ghostTimer);
   ghostTimer = window.setTimeout(() => {
     ui.ghosts = [];
@@ -346,7 +351,7 @@ function confirmMove() {
   resetMarks();
   persist();
   // 따내기 바둑을 잡기로 이기면 잡힌 돌을 잠깐 보여 준 뒤 결과 창
-  if (g.isOver) return finishGame(r.captured.length ? GHOST_MS : 0);
+  if (g.isOver) return finishGame(r.captured.length ? END_DELAY_MS : 0);
   scheduleAI();
   render();
 }
@@ -391,7 +396,7 @@ function scheduleAI() {
     ui.aiThinking = false;
     persist();
     // 하양이가 잡아서 이기면 어느 돌이 잡혔는지 잠깐 보여 준 뒤 결과 창
-    if (game.isOver) return finishGame(captured.length ? GHOST_MS : 0);
+    if (game.isOver) return finishGame(captured.length ? END_DELAY_MS : 0);
     announceAlerts();
     render();
   }, AI_DELAY);
@@ -808,6 +813,7 @@ function gameHTML(): string {
         rings: step2 ? plan.stones : [],
         zone: step2 ? plan.zone : null,
         ghosts: ui.ghosts,
+        ghostAge: Date.now() - ui.ghostAt,
       })}</div>
     </div>
     <div class="side">

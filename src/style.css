@@ -422,9 +422,10 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .confirm.warn .confirm-text b { color: var(--pink-ink); }
 .confirm.warn .confirm-text span { color: #8E2F44; }
 .hint-zone { animation: pulse 1.4s ease-in-out infinite; }
-/* 방금 잡힌 돌: 잠깐 흐리게 보였다가 사라짐 */
-.ghost { opacity: 0.55; animation: ghost-fade 1.3s ease-out forwards; }
-@keyframes ghost-fade { from { opacity: 0.8; } to { opacity: 0.15; } }
+/* 방금 잡힌 돌: 판에서 집어 올리듯 작아지며 사라짐(GHOST_MS와 같은 시간) */
+.board-svg .captured { transform-box: fill-box; transform-origin: center; animation: ghost-out 0.55s ease-in forwards; }
+@keyframes ghost-out { from { opacity: 1; transform: scale(1); } 30% { opacity: 1; transform: scale(1.08); } to { opacity: 0; transform: scale(0.3); } }
 @media (prefers-reduced-motion: reduce) {
-  .player.alert, .hint-zone, .ghost { animation: none; }
+  .player.alert, .hint-zone { animation: none; }
+  .board-svg .captured { animation: none; opacity: 0; }
 }

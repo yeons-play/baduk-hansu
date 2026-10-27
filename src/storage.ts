@@ -24,9 +24,10 @@ export interface SavedGame {
   moves: number[];
   /** 둘 다 넘겨 집 세기 화면에 있을 때: 고른 죽은 돌(앱을 닫았다 열어도 그대로) */
   dead?: number[];
-  /** 이 판에서 도와줘·되돌리기를 쓴 횟수(이어 두어도 이어서 센다) */
+  /** 이 판에서 도와줘·되돌리기를 쓴 횟수(이어 두어도 이어서 센다), 도와줘로 정확한 자리까지 본 횟수 */
   hints?: number;
   undos?: number;
+  hintsFull?: number;
   savedAt: string;
 }
 
@@ -109,10 +110,12 @@ export interface Settings {
   rate: 'slow' | 'normal';
   /** 캐릭터 이름(비어 있으면 까망이·하양이). 글 속 이름 바꾸기는 `src/names.ts` */
   names?: { black: string; white: string };
+  /** 두는 중에 알려 주기(위험·잡을 기회 알림, 스스로 단수 확인). 보호자용, 기본 켬 */
+  coach: boolean;
 }
 
 export function loadSettings(): Settings {
-  return { v: 1, sound: true, voice: true, rate: 'normal', ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
+  return { v: 1, sound: true, voice: true, rate: 'normal', coach: true, ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
 }
 export function saveSettings(s: Settings): void {
   write(KEY_SETTINGS, s);
@@ -164,9 +167,10 @@ export interface FinishedGame {
   good?: { capture: number; escape: number };
   /** 놓친 장면 종류별 횟수 */
   missed?: Record<string, number>;
-  /** 도와줘·되돌리기를 쓴 횟수 */
+  /** 도와줘·되돌리기를 쓴 횟수, 도와줘로 정확한 자리까지 본 횟수 */
   hints?: number;
   undos?: number;
+  hintsFull?: number;
   mode: GameMode;
   size: number;
   level: Level;
@@ -213,6 +217,10 @@ export interface GameLogEntry {
   /** 도와줘·되돌리기를 쓴 횟수(이 기록을 남기기 전에 끝난 판에는 없음) */
   hints?: number;
   undos?: number;
+  /** 도와줘로 정확한 자리(3단계)까지 본 횟수(도와줘 3단계 전에 끝난 판에는 없음) */
+  hintsFull?: number;
+  /** 두는 중에 알려 주기(위험·기회 알림, 스스로 단수 확인)를 켜고 둔 판인지 */
+  coach?: boolean;
   /** 잘한 수(잡기·도망가기)와 놓친 장면 종류별 횟수 */
   good?: { capture: number; escape: number };
   missed?: Record<string, number>;

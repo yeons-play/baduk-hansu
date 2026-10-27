@@ -50,6 +50,7 @@ export function entryFromHistory(h: FinishedGame): GameLogEntry {
     moves: h.moves.length,
     ...(typeof h.hints === 'number' ? { hints: h.hints } : {}),
     ...(typeof h.undos === 'number' ? { undos: h.undos } : {}),
+    ...(typeof h.hintsFull === 'number' ? { hintsFull: h.hintsFull } : {}),
     ...(good && missed ? { good, missed } : {}),
     ...(sc ? { margin: Number(sc[1]) - Number(sc[2]) } : {}),
     ...(h.setup ? { setup: true } : {}),
@@ -100,8 +101,8 @@ export interface Summary {
   /** 이긴 판 가운데 하양이 기권, 진 판 가운데 까망이 그만하기 */
   aiResigned: number;
   quit: number;
-  /** 도와줘·되돌리기를 센 판 수와 합계(센 판만 나눈다) */
-  help: { games: number; hints: number; undos: number };
+  /** 도와줘·되돌리기를 센 판 수와 합계(센 판만 나눈다). full은 정확한 자리까지 본 횟수(센 판 fullGames) */
+  help: { games: number; hints: number; undos: number; fullGames: number; full: number };
   /** 잘한 수·놓친 장면을 센 판 수와 합계 */
   play: { games: number; capture: number; escape: number; missed: Record<string, number> };
   /** 문제 놀이: 기술별 [푼 문제 수, 한 번에 맞힌 수] */
@@ -131,7 +132,7 @@ export function summarize(
     groups: [],
     aiResigned: 0,
     quit: 0,
-    help: { games: 0, hints: 0, undos: 0 },
+    help: { games: 0, hints: 0, undos: 0, fullGames: 0, full: 0 },
     play: { games: 0, capture: 0, escape: 0, missed: {} },
     practice: {},
     lessons: [],
@@ -160,6 +161,10 @@ export function summarize(
       s.help.games++;
       s.help.hints += e.hints;
       s.help.undos += e.undos;
+    }
+    if (typeof e.hintsFull === 'number') {
+      s.help.fullGames++;
+      s.help.full += e.hintsFull;
     }
     if (e.good && e.missed) {
       s.play.games++;

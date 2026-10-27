@@ -64,7 +64,11 @@ export function summaryHTML(s: Summary, days: number, lessonsDone: number, lesso
     : '<p class="sheet-p small">이 기간에 끝난 판이 없어요.</p>';
 
   const help = s.help.games
-    ? `<p class="sheet-p">판마다 도와줘 <b>${per(s.help.hints, s.help.games)}번</b>, 되돌리기 <b>${per(s.help.undos, s.help.games)}번</b> <span class="sum-note">(센 판 ${s.help.games}판)</span></p>`
+    ? `<p class="sheet-p">판마다 도와줘 <b>${per(s.help.hints, s.help.games)}번</b>, 되돌리기 <b>${per(s.help.undos, s.help.games)}번</b> <span class="sum-note">(센 판 ${s.help.games}판)</span></p>${
+        s.help.fullGames
+          ? `<p class="sheet-p small">도와줘는 누를 때마다 ‘무엇을 찾을지 → 어디쯤 → 정확한 자리’ 순서로 알려 줘요. 정확한 자리까지 본 건 판마다 ${per(s.help.full, s.help.fullGames)}번이에요.</p>`
+          : ''
+      }`
     : '<p class="sheet-p small">이번 업데이트부터 세요. 아직 센 판이 없어요.</p>';
 
   const cell = (label: string, n: number, ok = false) =>

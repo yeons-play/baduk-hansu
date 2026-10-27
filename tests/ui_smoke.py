@@ -108,9 +108,14 @@ with sync_playwright() as pw:
       tap_point(p, 4, 4)
       ok('돌 있는 곳 누르면 안내', '벌써 돌이' in (p.locator('.toast').inner_text() if p.locator('.toast').count() else ''))
 
+      # 도와줘 3단계: 무엇을 찾을지(말) → 어디쯤 → 정확한 자리
       p.click('[data-action="hint"]')
       p.wait_for_timeout(150)
-      ok('힌트 표시', p.locator('.hint-ring').count() == 1)
+      ok('도와줘 1단계는 말로만(자리 표시 없음)', p.locator('.guide.has-hint').count() == 1 and p.locator('.game .board-svg circle.hint-ring').count() == 0)
+      ok('도와줘 누르면 더 도와줘로', '더 도와줘' in p.locator('[data-action="hint"]').inner_text())
+      p.click('[data-action="hint"]'); p.wait_for_timeout(150)
+      p.click('[data-action="hint"]'); p.wait_for_timeout(150)
+      ok('도와줘 3단계에 정확한 자리', p.locator('.game .board-svg circle.hint-ring').count() == 1 and '여기' in p.locator('.guide').inner_text(), p.locator('.guide').inner_text())
       shot(p, '5-hint')
 
       p.click('[data-action="undo"]')
@@ -143,7 +148,7 @@ with sync_playwright() as pw:
       ok('기록에 1패 반영', '1' in p.locator('.stat-row .stat').nth(2).inner_text())
       # 보호자 요약용 한 줄 기록: 도와줘 1번·되돌리기 1번(나갔다가 이어 두어도 이어서 셈)
       log = p.evaluate("JSON.parse(localStorage.getItem('baduk-game-log') || '[]')")
-      ok('한 줄 기록에 도와줘·되돌리기 횟수', len(log) == 1 and log[0].get('hints') == 1 and log[0].get('undos') == 1 and log[0].get('level') == 1, log[:1])
+      ok('한 줄 기록에 도와줘·되돌리기 횟수', len(log) == 1 and log[0].get('hints') == 1 and log[0].get('hintsFull') == 1 and log[0].get('undos') == 1 and log[0].get('level') == 1 and log[0].get('coach') is True, log[:1])
 
       # 배우기 탭
       p.click('.tabbar [data-tab="learn"]')
@@ -494,7 +499,10 @@ with sync_playwright() as pw:
       p.reload(); p.wait_for_timeout(400)
       p.click('.play-card.capture'); p.wait_for_timeout(150)
       p.click('[data-action="resume"]'); p.wait_for_timeout(1500)
-      tap_point(p, 2, 3, size=5); p.click('[data-action="confirm"]'); p.wait_for_timeout(600)
+      tap_point(p, 2, 3, size=5); p.click('[data-action="confirm"]'); p.wait_for_timeout(250)
+      ok('잡아서 끝나면 잡힌 돌을 먼저 보여 줌(결과 창은 조금 뒤)', p.locator('.game .board-svg .ghost').count() == 1 and p.locator('.result-title').count() == 0 and '잡았어요' in p.locator('.guide').inner_text())
+      shot(p, '25a-capture-ghost')
+      p.wait_for_timeout(1500)
       ok('잡아서 이기면 칭찬(잡기 1번)', p.locator('.sheet .praise').count() == 1 and '잡기' in p.locator('.sheet .praise').inner_text())
       ok('결과 화면에 놓친 장면 다시 풀기', p.locator('.sheet [data-action="scene-retry"]').count() == 1)
       shot(p, '25-result-praise-scene')
@@ -562,6 +570,71 @@ with sync_playwright() as pw:
       ok('슬라이더로 2수까지', p.locator('.rv-count b').inner_text() == '2')
       p.click('[data-action="tab"][data-tab="record"]'); p.wait_for_timeout(150)
       p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(150)
+
+      # 두는 중에 알려 주기 — 판을 저장값으로 넣고(까망이 차례) 이어 두기로 연다
+      def open_saved(game, card='.play-card.capture'):
+          p.evaluate("g => localStorage.setItem('baduk-current-game', JSON.stringify(g))", game)
+          p.evaluate("localStorage.setItem('baduk-seen-capture-rules', 'true')")
+          p.reload(); p.wait_for_timeout(400)
+          p.click(card); p.wait_for_timeout(150)
+          p.click('[data-action="resume"]'); p.wait_for_timeout(400)
+      P7 = lambda x, y: y * 7 + x
+      # 기회: 까망이가 단수로 몬 하양이 (3,3)을 하양이가 그냥 둠 → 하양이 얼굴이 놀람, 어디인지는 안 알려 줌
+      chance = [P7(3, 2), P7(3, 3), P7(2, 3), P7(6, 6), P7(4, 3), P7(6, 5)]
+      open_saved({'v': 1, 'mode': 'capture', 'size': 7, 'level': 1, 'captureTarget': 3, 'moves': chance, 'savedAt': ''})
+      ok('기회 알림: 하양이 얼굴 놀람 + 안내 글', p.locator('.player:not(.me).alert').count() == 1 and p.locator('.player.me.alert').count() == 0 and '잡을 수 있는' in p.locator('.guide.alert').inner_text())
+      shot(p, '28-alert-chance')
+      p.click('[data-action="hint"]'); p.wait_for_timeout(150)
+      ok('도와줘 1단계: 무엇을 찾을지', '숨구멍이 하나 남은 하양이 돌' in p.locator('.guide').inner_text())
+      p.click('[data-action="hint"]'); p.wait_for_timeout(150)
+      ok('도와줘 2단계: 잡을 돌에 동그라미', p.locator('.game .board-svg circle.hint-ring').count() == 1 and '동그라미' in p.locator('.guide').inner_text())
+      shot(p, '29-hint-step2')
+      p.click('[data-action="hint"]'); p.wait_for_timeout(150)
+      ok('도와줘 3단계: 정확한 자리', p.locator('.game .board-svg circle.hint-ring').count() == 1 and '잡을 수 있어요' in p.locator('.guide').inner_text())
+      saved = p.evaluate("JSON.parse(localStorage.getItem('baduk-current-game'))")
+      ok('도와줘 횟수 저장(한 차례 1번, 자리까지 1번)', saved.get('hints') == 1 and saved.get('hintsFull') == 1, saved)
+      tap_point(p, 3, 4, size=7); p.click('[data-action="confirm"]'); p.wait_for_timeout(150)
+      ok('잡힌 돌을 잠깐 흐리게 보여 줌', p.locator('.game .board-svg .ghost').count() == 1)
+      shot(p, '30-ghost')
+      p.wait_for_timeout(1700)
+      ok('조금 뒤 잡힌 돌이 사라짐', p.locator('.game .board-svg .ghost').count() == 0)
+      p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
+      # 위험: 하양이가 구석 까망이를 단수로 몲 → 까망이 얼굴이 놀람
+      open_saved({'v': 1, 'mode': 'capture', 'size': 7, 'level': 1, 'captureTarget': 3, 'moves': [P7(0, 0), P7(1, 0)], 'savedAt': ''})
+      ok('위험 알림: 까망이 얼굴 놀람 + 안내 글', p.locator('.player.me.alert').count() == 1 and '위험' in p.locator('.guide.alert').inner_text())
+      p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
+      # 스스로 단수: 하양이 (2,0)·(1,1) 사이 (1,0)에 두려 하면 한 번 묻고, 두 번 눌러도 바로 놓지 않음
+      sa_board = [0] * 25
+      sa_board[2] = 2; sa_board[6] = 2
+      sa_game = {'v': 1, 'setup': {'board': sa_board, 'toMove': 1}, 'mode': 'capture', 'size': 5, 'level': 1, 'captureTarget': 3, 'moves': [], 'savedAt': ''}
+      open_saved(sa_game)
+      tap_point(p, 1, 0, size=5)
+      ok('스스로 단수 자리는 한 번 더 물음', p.locator('.confirm.warn').count() == 1 and '숨구멍이 하나만' in p.locator('.confirm').inner_text())
+      shot(p, '31-self-atari')
+      tap_point(p, 1, 0, size=5)
+      ok('스스로 단수 자리는 두 번 눌러도 바로 놓지 않음', p.locator('.confirm.warn').count() == 1 and p.evaluate("JSON.parse(localStorage.getItem('baduk-current-game')).moves.length") == 0)
+      p.click('[data-action="cancel-preview"]'); p.wait_for_timeout(100)
+      tap_point(p, 3, 3, size=5)
+      ok('보통 자리는 그대로 미리 보기', p.locator('.confirm').count() == 1 and p.locator('.confirm.warn').count() == 0)
+      p.click('[data-action="cancel-preview"]'); p.wait_for_timeout(100)
+      p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
+      # 보호자가 끄면 알림·확인 없음(보호자용을 펼친 채로 켜고 끄기)
+      p.click('[data-action="settings"]'); p.wait_for_timeout(150)
+      p.click('details.parent summary'); p.wait_for_timeout(100)
+      p.click('[data-action="toggle-coach"]'); p.wait_for_timeout(150)
+      ok('알려 주기 끄기 저장, 보호자용은 펼친 채', p.evaluate("JSON.parse(localStorage.getItem('baduk-settings')).coach") is False and p.locator('details.parent[open]').count() == 1)
+      p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(100)
+      open_saved(sa_game)
+      tap_point(p, 1, 0, size=5)
+      ok('끄면 스스로 단수도 그냥 미리 보기', p.locator('.confirm').count() == 1 and p.locator('.confirm.warn').count() == 0)
+      p.click('[data-action="cancel-preview"]'); p.wait_for_timeout(100)
+      p.click('[data-action="exit-game"]'); p.wait_for_timeout(200)
+      p.click('[data-action="settings"]'); p.wait_for_timeout(150)
+      ok('설정을 새로 열면 보호자용은 접혀 있음', p.locator('details.parent[open]').count() == 0)
+      p.click('details.parent summary'); p.wait_for_timeout(100)
+      p.click('[data-action="toggle-coach"]'); p.wait_for_timeout(150)
+      ok('알려 주기 다시 켜기', p.evaluate("JSON.parse(localStorage.getItem('baduk-settings')).coach") is True)
+      p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(100)
 
       # 보호자용 설정
       p.click('[data-action="settings"]'); p.wait_for_timeout(150)

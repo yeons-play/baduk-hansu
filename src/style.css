@@ -411,3 +411,20 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .sum-cell.ok { background: var(--mint); border-color: transparent; }
 .sum-cell.ok b { color: var(--mint-ink); }
 .sum-note { font-size: 0.9rem; color: var(--sub); }
+
+/* 두는 중에 알려 주기 */
+.player.alert { border-color: var(--pink-ink); background: #FFF5F7; animation: wiggle 0.45s ease-in-out 1; }
+.player.alert .pname small { color: var(--pink-ink); font-weight: 700; }
+@keyframes wiggle { 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
+.guide.alert { background: var(--pink); color: #8E2F44; }
+.guide.alert .ic { color: var(--pink-ink); }
+.confirm.warn { border-color: var(--pink-ink); background: #FFF5F7; }
+.confirm.warn .confirm-text b { color: var(--pink-ink); }
+.confirm.warn .confirm-text span { color: #8E2F44; }
+.hint-zone { animation: pulse 1.4s ease-in-out infinite; }
+/* 방금 잡힌 돌: 잠깐 흐리게 보였다가 사라짐 */
+.ghost { opacity: 0.55; animation: ghost-fade 1.3s ease-out forwards; }
+@keyframes ghost-fade { from { opacity: 0.8; } to { opacity: 0.15; } }
+@media (prefers-reduced-motion: reduce) {
+  .player.alert, .hint-zone, .ghost { animation: none; }
+}

@@ -3,8 +3,22 @@ import '@fontsource/jua/latin-400.css';
 import '@fontsource/gowun-dodum/korean-400.css';
 import '@fontsource/gowun-dodum/latin-400.css';
 import './style.css';
-import { BLACK, EMPTY, WHITE, Game, type GameMode, type IllegalReason } from './engine/rules';
-import { chooseMove, type Level, type MoveReason } from './engine/ai/beginner';
+import { BLACK, EMPTY, WHITE, Game, opponent, type GameMode, type IllegalReason, type Stone } from './engine/rules';
+import { chooseMove, type Level } from './engine/ai/beginner';
+import {
+  alertText,
+  hintText,
+  NO_ALERTS,
+  planHint,
+  selfAtari,
+  SELF_ATARI_SUB,
+  SELF_ATARI_TEXT,
+  SELF_ATARI_TITLE,
+  turnAlerts,
+  type Alerts,
+  type HintPlan,
+  type HintStep,
+} from './coach';
 import { estimateDead, countDead } from './engine/ai/dead';
 import { hopeless } from './engine/ai/resign';
 import { pointFromEvent, renderBoard } from './ui/board';
@@ -118,14 +132,31 @@ const ui = {
   /** 이 판에서 도와줘·되돌리기를 쓴 횟수(보호자 요약용, 이어 두어도 이어서 셈) */
   hints: 0,
   undos: 0,
+  /** 이 판에서 도와줘로 정확한 자리(3단계)까지 본 횟수 */
+  hintsFull: 0,
+  /** 도와줘 단계(0 = 아직 안 누름)와 이번 차례의 도와줘 계획(1~3단계가 같은 수를 가리키게) */
+  hintStep: 0 as HintStep,
+  hintPlan: null as HintPlan | null,
+  /** 미리 보기한 자리가 스스로 단수 자리인지(두는 중 알려 주기가 켜져 있을 때만) */
+  warn: false,
+  /** 방금 잡혀 들어낸 돌(잠깐 흐리게 보여 줌) */
+  ghosts: [] as { p: number; c: Stone }[],
+  /** 알림을 읽어 준 판(같은 판에서 두 번 읽지 않게) */
+  alertSpoken: '',
+  /** 설정의 '보호자용'을 펼쳐 두었는지(켜고 끄기를 누르면 화면을 다시 그려도 닫히지 않게) */
+  parentOpen: false,
   /** 기록 요약에서 고른 기간(일, 0 = 전체) */
   summaryDays: 7,
 };
 
 const HUMAN = BLACK;
 const AI_DELAY = 550;
+/** 잡힌 돌을 흐리게 보여 주는 시간, 따내기 바둑이 잡기로 끝나면 결과 창을 이만큼 늦게 띄운다 */
+const GHOST_MS = 1300;
 let aiTimer: number | undefined;
 let toastTimer: number | undefined;
+let ghostTimer: number | undefined;
+let resultTimer: number | undefined;
 
 const app = document.getElementById('app')!;
 
@@ -136,23 +167,6 @@ const ILLEGAL_TEXT: Record<IllegalReason, string> = {
   superko: '지금은 거기에 둘 수 없어요. 다른 곳에 먼저 놓아요 (패)',
   'off-board': '선이 만나는 곳을 눌러요',
   'game-over': '놀이가 끝났어요',
-};
-
-const HINT_TEXT: Record<MoveReason, string> = {
-  win: '여기에 놓으면 하양이를 잡아서 이겨요!',
-  capture: '여기에 놓으면 하양이를 잡을 수 있어요!',
-  escape: '까망이가 위험해요! 여기로 도망가요',
-  atari: '여기에 놓으면 하양이의 숨구멍(활로)이 하나만 남아요',
-  joseki: '바둑에서 많이 두는 좋은 순서(정석)예요. 이렇게 두면 서로 튼튼해요',
-  corner: '귀(모서리)는 집 짓기가 가장 쉬워요. 빈 귀부터 차지해요',
-  approach: '하양이 귀에 다가가요(걸침). 하양이 혼자 귀를 다 갖지 못하게요',
-  enclose: '내 귀를 한 번 더 지켜요(굳힘). 그러면 귀가 튼튼한 내 집이 돼요',
-  answer: '하양이가 내 귀에 다가왔어요. 귀를 지키면서 받아요',
-  side: '귀를 다 차지했으면 이제 변(가장자리)으로 벌려요',
-  territory: '아직 누구 집도 아닌 넓은 곳이에요. 여기에 놓아 내 집을 넓혀요',
-  connect: '친구 돌 옆에 붙이면 튼튼해져요',
-  shape: '다른 돌 가까이에 놓아 볼까요?',
-  pass: '놓을 곳이 없어요',
 };
 
 type Target = 1 | 2 | 3;
@@ -179,6 +193,9 @@ function newGame(level: Level, target: Target) {
   ui.resignDeclined = false;
   ui.hints = 0;
   ui.undos = 0;
+  ui.hintsFull = 0;
+  clearGhosts();
+  window.clearTimeout(resultTimer);
   resetMarks();
   persist();
 }
@@ -214,6 +231,9 @@ function resumeGame(): boolean {
   ui.resignDeclined = false;
   ui.hints = typeof saved.hints === 'number' ? saved.hints : 0;
   ui.undos = typeof saved.undos === 'number' ? saved.undos : 0;
+  ui.hintsFull = typeof saved.hintsFull === 'number' ? saved.hintsFull : 0;
+  clearGhosts();
+  window.clearTimeout(resultTimer);
   ui.level = saved.level;
   ui.mode = saved.mode;
   if (saved.mode === 'capture' && SIZES.includes(saved.size as BoardSize)) ui.size = saved.size as BoardSize;
@@ -243,6 +263,7 @@ function persist() {
     ...(scoring ? { dead: ui.dead } : {}),
     hints: ui.hints,
     undos: ui.undos,
+    hintsFull: ui.hintsFull,
     savedAt: new Date().toISOString(),
   });
 }
@@ -251,6 +272,58 @@ function resetMarks() {
   ui.preview = null;
   ui.hint = null;
   ui.hintText = null;
+  ui.hintStep = 0;
+  ui.hintPlan = null;
+  ui.warn = false;
+}
+
+/** 지금 판의 수순(착수 좌표, 넘기기 -1) — 기록·복습·알림이 같은 모양으로 쓴다 */
+function movesOf(g: Game): number[] {
+  return g.moves.filter((m) => m.type !== 'resign').map((m) => (m.type === 'play' ? m.point : -1));
+}
+
+/** 처음부터 다시 둘 수 있는 기록(출발 배치 포함) */
+function specOf(g: Game) {
+  return { mode: g.rules.mode, size: g.size, captureTarget: g.rules.captureTarget, moves: movesOf(g), ...(ui.setup ? { setup: ui.setup } : {}) };
+}
+
+const coachOn = () => loadSettings().coach;
+
+let alertCache: { key: string; a: Alerts } | null = null;
+/** 까망이 차례의 위험·기회 알림(같은 판이면 다시 계산하지 않음) */
+function currentAlerts(g: Game): Alerts {
+  if (!coachOn() || g.isOver || g.toMove !== HUMAN || ui.aiThinking) return NO_ALERTS;
+  const spec = specOf(g);
+  const key = `${g.size}:${g.rules.mode}:${spec.moves.join(',')}`;
+  if (alertCache?.key !== key) alertCache = { key, a: turnAlerts(g, spec, HUMAN) };
+  return alertCache.a;
+}
+
+/** 까망이 차례가 되면 알림을 한 번 읽어 준다(어디인지는 말하지 않음) */
+function announceAlerts() {
+  const g = ui.game;
+  if (!g) return;
+  const text = alertText(currentAlerts(g));
+  const key = alertCache?.key ?? '';
+  if (!text || ui.alertSpoken === key) return;
+  ui.alertSpoken = key;
+  speak(text);
+}
+
+/** 방금 잡힌 돌을 잠깐 흐리게 보여 준다 */
+function showGhosts(captured: number[], mover: Stone) {
+  if (!captured.length) return;
+  ui.ghosts = captured.map((p) => ({ p, c: opponent(mover) }));
+  window.clearTimeout(ghostTimer);
+  ghostTimer = window.setTimeout(() => {
+    ui.ghosts = [];
+    if (ui.screen === 'game') render();
+  }, GHOST_MS);
+}
+
+function clearGhosts() {
+  ui.ghosts = [];
+  window.clearTimeout(ghostTimer);
 }
 
 function lastMovePoint(g: Game): number | null {
@@ -269,9 +342,11 @@ function confirmMove() {
     return;
   }
   sfx(r.captured.length ? 'capture' : 'stone');
+  showGhosts(r.captured, HUMAN);
   resetMarks();
   persist();
-  if (g.isOver) return finishGame();
+  // 따내기 바둑을 잡기로 이기면 잡힌 돌을 잠깐 보여 준 뒤 결과 창
+  if (g.isOver) return finishGame(r.captured.length ? GHOST_MS : 0);
   scheduleAI();
   render();
 }
@@ -310,10 +385,14 @@ function scheduleAI() {
       return;
     }
     const r = game.play(c.point);
-    sfx(r.ok && r.captured.length ? 'capture' : 'stone');
+    const captured = r.ok ? r.captured : [];
+    sfx(captured.length ? 'capture' : 'stone');
+    showGhosts(captured, opponent(HUMAN));
     ui.aiThinking = false;
     persist();
-    if (game.isOver) return finishGame();
+    // 하양이가 잡아서 이기면 어느 돌이 잡혔는지 잠깐 보여 준 뒤 결과 창
+    if (game.isOver) return finishGame(captured.length ? GHOST_MS : 0);
+    announceAlerts();
     render();
   }, AI_DELAY);
 }
@@ -379,7 +458,8 @@ function historySummary(g: Game): string {
   return '둘 다 넘김(비김)';
 }
 
-function finishGame() {
+/** 끝난 판을 기록하고 결과 창을 띄운다. delay를 주면 결과 창만 그만큼 늦게(잡힌 돌을 먼저 보여 주려고) */
+function finishGame(delay = 0) {
   const g = ui.game!;
   const res = g.result!;
   let outcome: 'win' | 'loss' | 'draw' = 'draw';
@@ -420,8 +500,8 @@ function finishGame() {
   }
   // 복습용으로 끝난 판을 남긴다. 처음부터 다시 두어 보며 잘한 수는 칭찬하고, 놓친 장면은 문제로 만든다
   const id = Date.now();
-  const moves = g.moves.filter((m) => m.type !== 'resign').map((m) => (m.type === 'play' ? m.point : -1));
-  const spec = { mode: g.rules.mode, size: g.size, captureTarget: g.rules.captureTarget, moves, ...(ui.setup ? { setup: ui.setup } : {}) };
+  const spec = specOf(g);
+  const moves = spec.moves;
   const an = analyzeGame(spec, HUMAN);
   const good = { capture: 0, escape: 0 };
   for (const x of an.good) good[x.kind]++;
@@ -453,6 +533,7 @@ function finishGame() {
     missed,
     hints: ui.hints,
     undos: ui.undos,
+    hintsFull: ui.hintsFull,
     outcome,
     reason: res.reason,
     summary: historySummary(g),
@@ -471,17 +552,29 @@ function finishGame() {
     moves: moves.length,
     hints: ui.hints,
     undos: ui.undos,
+    hintsFull: ui.hintsFull,
+    coach: coachOn(),
     good,
     missed,
     ...(res.reason === 'score' ? { margin: res.score.margin } : {}),
     ...(ui.setup ? { setup: true } : {}),
   });
   ui.lastFinishedId = id;
-  ui.sheet = 'result';
   resetMarks();
-  if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
-  speak(`${ui.result.title} ${ui.result.body} ${ui.praise}`);
+  const show = () => {
+    ui.sheet = 'result';
+    if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
+    speak(`${ui.result.title} ${ui.result.body} ${ui.praise}`);
+    render();
+  };
+  window.clearTimeout(resultTimer);
+  if (delay <= 0) return show();
+  // 기록은 이미 남겼다. 그사이 '나가기'로 홈에 갔으면 결과 창은 띄우지 않는다
+  ui.sheet = null;
   render();
+  resultTimer = window.setTimeout(() => {
+    if (ui.screen === 'game' && ui.game === g) show();
+  }, delay);
 }
 
 /** 잘한 수 칭찬 한 줄(없으면 빈 글) */
@@ -494,7 +587,7 @@ function praiseText(good: { capture: number; escape: number }): string {
 
 function undoTurn() {
   const g = ui.game;
-  if (!g || ui.aiThinking) return;
+  if (!g || ui.aiThinking || g.isOver) return; // 끝난 판(잡힌 돌을 보여 주는 중)은 되돌리지 않음 — 이미 기록됨
   if (!g.moves.some((m) => m.color === HUMAN)) return showToast('아직 되돌릴 수가 없어요');
   // 하양이 수까지 함께 되돌려 다시 까망이 차례로
   do {
@@ -503,22 +596,34 @@ function undoTurn() {
   if (g.toMove !== HUMAN) g.undo();
   ui.hopelessStreak = 0;
   ui.undos++;
+  clearGhosts();
   resetMarks();
   persist();
   render();
 }
 
+/**
+ * 도와줘 3단계: 누를 때마다 한 단계씩 — ① 무엇을 찾을지(말) ② 어느 돌·어디쯤(동그라미·네모) ③ 정확한 자리.
+ * 한 차례에 한 번 만든 계획을 끝까지 쓴다. 센 횟수: 이 차례에 처음 누르면 hints, 3단계까지 가면 hintsFull
+ */
 function showHint() {
   const g = ui.game;
-  if (!g || ui.aiThinking || g.toMove !== HUMAN) return;
-  const c = chooseMove(g, { level: 3 });
-  if (c.point == null) {
-    return showToast(g.rules.mode === 'normal' ? '이제 놓을 곳이 거의 없어요. 차례 넘기기를 눌러도 돼요' : '놓을 곳이 없어요');
+  if (!g || ui.aiThinking || g.toMove !== HUMAN || g.isOver) return;
+  if (!ui.hintPlan) {
+    const plan = planHint(g);
+    if (!plan) {
+      return showToast(g.rules.mode === 'normal' ? '이제 놓을 곳이 거의 없어요. 차례 넘기기를 눌러도 돼요' : '놓을 곳이 없어요');
+    }
+    ui.hintPlan = plan;
   }
-  if (ui.hint == null) ui.hints++; // 한 차례에 여러 번 눌러도 한 번으로 센다
-  ui.hint = c.point;
-  ui.hintText = HINT_TEXT[c.reason];
+  const before = ui.hintStep;
+  if (before === 0) ui.hints++;
+  if (before === 2) ui.hintsFull++;
+  ui.hintStep = Math.min(3, before + 1) as HintStep;
+  ui.hint = ui.hintStep === 3 ? ui.hintPlan.point : null;
+  ui.hintText = hintText(ui.hintPlan, ui.hintStep);
   ui.preview = null;
+  ui.warn = false;
   persist();
   speak(ui.hintText);
   render();
@@ -528,15 +633,22 @@ function tapBoard(p: number | null) {
   const g = ui.game;
   if (!g || p == null || g.isOver) return;
   if (ui.aiThinking || g.toMove !== HUMAN) return showToast('하양이 차례예요. 조금만 기다려요');
-  if (ui.preview === p) return confirmMove(); // 같은 곳을 한 번 더 누르면 놓기
+  if (ui.preview === p) {
+    // 같은 곳을 한 번 더 누르면 놓기. 스스로 단수 자리는 버릇처럼 두 번 눌러 놓지 않게 '놓기' 버튼으로만
+    if (ui.warn) return speak(SELF_ATARI_TEXT);
+    return confirmMove();
+  }
   const r = g.check(p);
   if (!r.ok) {
     ui.preview = null;
+    ui.warn = false;
     showToast(ILLEGAL_TEXT[r.reason]);
     render();
     return;
   }
   ui.preview = p;
+  ui.warn = coachOn() && selfAtari(g, p);
+  if (ui.warn) speak(SELF_ATARI_TEXT);
   render();
 }
 
@@ -645,25 +757,41 @@ function gameHTML(): string {
   // 따내기 바둑에는 보통 넘기기가 없지만, 놓을 곳이 하나도 없으면 넘길 수 있게 한다(갇혀서 그만하기밖에 없는 일 방지)
   const canPass = humanTurn && (g.rules.mode === 'normal' || g.legalMoves().length === 0);
   const stuck = canPass && g.rules.mode === 'capture';
-  const canUndo = g.moves.some((m) => m.color === HUMAN) && !ui.aiThinking;
+  const canUndo = g.moves.some((m) => m.color === HUMAN) && !ui.aiThinking && !g.isOver;
+  // 두는 중에 알려 주기: 위험(내 돌이 새로 단수)·기회(하양이 돌을 새로 잡을 수 있음). 어느 돌인지는 안 알려 줌
+  const alerts = humanTurn ? currentAlerts(g) : NO_ALERTS;
+  const alertMsg = alertText(alerts);
+  const res = g.result;
+  const endText =
+    res?.reason === 'capture' ? (res.winner === HUMAN ? '와, 잡았어요!' : '앗, 잡혔어요!') : '다 두었어요';
   const status =
     ui.preview != null
-      ? `<div class="confirm">
+      ? ui.warn
+        ? `<div class="confirm warn">
+      <div class="confirm-text"><b>${SELF_ATARI_TITLE}</b><span>${SELF_ATARI_SUB}</span></div>
+      <button class="btn ghost" data-action="cancel-preview">아니요</button>
+      <button class="btn primary" data-action="confirm">놓기</button>
+    </div>`
+        : `<div class="confirm">
       <div class="confirm-text"><b>여기에 놓을까요?</b><span>한 번 더 눌러도 돼요</span></div>
       <button class="btn ghost" data-action="cancel-preview">아니요</button>
       <button class="btn primary" data-action="confirm">놓기</button>
     </div>`
-      : `<div class="guide ${ui.hintText ? 'has-hint' : ''}">${
+      : `<div class="guide ${ui.hintText ? 'has-hint' : alertMsg && !stuck ? 'alert' : ''}">${
           ui.hintText
-            ? `${icon('bulb')}<span>${esc(ui.hintText)}</span>`
+            ? `${icon('bulb')}<span>${rich(ui.hintText)}</span>`
             : g.isOver
-              ? '<span>다 두었어요</span>'
+              ? `<span>${endText}</span>`
               : stuck
               ? '<span>놓을 곳이 없어요. 넘기기를 눌러요</span>'
+              : alertMsg
+              ? `${icon('help')}<span>${esc(alertMsg)}</span>`
               : humanTurn
               ? '<span>놓고 싶은 곳을 눌러요</span>'
               : '<span class="thinking">하양이가 생각하고 있어요…</span>'
         }</div>`;
+  const plan = ui.hintPlan;
+  const step2 = ui.hintStep === 2 && plan;
   return `<main class="screen game">
   <header class="bar">
     <button class="back" data-action="exit-game">${icon('chev')}나가기</button>
@@ -677,18 +805,21 @@ function gameHTML(): string {
         previewColor: HUMAN,
         lastMove: lastMovePoint(g),
         hint: ui.hint,
+        rings: step2 ? plan.stones : [],
+        zone: step2 ? plan.zone : null,
+        ghosts: ui.ghosts,
       })}</div>
     </div>
     <div class="side">
       <div class="players">
-        <div class="player me ${g.toMove === BLACK ? 'turn' : ''}">
-          ${stoneFace('black', 56, g.toMove === BLACK ? 'happy' : 'think')}
-          <span class="pname"><b>나 · 까망이</b><small>${g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
+        <div class="player me ${g.toMove === BLACK ? 'turn' : ''} ${alerts.danger ? 'alert' : ''}">
+          ${stoneFace('black', 56, alerts.danger ? 'oops' : g.toMove === BLACK ? 'happy' : 'think')}
+          <span class="pname"><b>나 · 까망이</b><small>${alerts.danger ? '앗, 위험해요!' : g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
           <span class="pcount" aria-label="잡은 돌">${g.captures(BLACK)}</span>
         </div>
-        <div class="player ${g.toMove === WHITE ? 'turn' : ''}">
-          ${stoneFace('white', 56, g.toMove === WHITE ? 'think' : 'happy')}
-          <span class="pname"><b>하양이</b><small>${g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
+        <div class="player ${g.toMove === WHITE ? 'turn' : ''} ${alerts.chance ? 'alert' : ''}">
+          ${stoneFace('white', 56, alerts.chance ? 'oops' : g.toMove === WHITE ? 'think' : 'happy')}
+          <span class="pname"><b>하양이</b><small>${alerts.chance ? '덜덜 떨고 있어요' : g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
           <span class="pcount" aria-label="잡은 돌">${g.captures(WHITE)}</span>
         </div>
       </div>
@@ -699,7 +830,9 @@ function gameHTML(): string {
       }
       ${status}
       <nav class="tools ${g.rules.mode === 'normal' || stuck ? 'five' : ''}" aria-label="놀이 도구">
-        <button data-action="hint" ${humanTurn ? '' : 'disabled'}><span class="tool-ic yellow">${icon('bulb')}</span>도와줘</button>
+        <button data-action="hint" ${humanTurn ? '' : 'disabled'}><span class="tool-ic yellow">${icon('bulb')}</span>${
+          ui.hintStep === 1 || ui.hintStep === 2 ? '더 도와줘' : '도와줘'
+        }</button>
         <button data-action="undo" ${canUndo ? '' : 'disabled'}><span class="tool-ic sky">${icon('undo')}</span>되돌리기</button>
         ${
           g.rules.mode === 'normal' || stuck
@@ -981,9 +1114,11 @@ function sheetHTML(): string {
         .join('')}
     </div>
     <p class="sheet-p small">소리가 안 나면 아이패드 옆 소리 크기 버튼을 올려 주세요.</p>
-    <details class="parent">
+    <details class="parent" ${ui.parentOpen ? 'open' : ''}>
       <summary>보호자용</summary>
       <div class="parent-in">
+        <button class="toggle" data-action="toggle-coach" role="switch" aria-checked="${st.coach}"><span>${icon('bulb')}두는 중에 알려 주기</span><span class="sw ${st.coach ? 'on' : ''}"></span></button>
+        <p class="sheet-p small">위험한 돌·잡을 수 있는 돌이 새로 생기면 얼굴과 말로 알려 주고(어디인지는 안 알려 줌), 스스로 숨구멍 하나(단수)가 되는 자리는 한 번 더 물어요.</p>
         <button class="btn ghost full" data-action="summary-open">${icon('chart')}기록 요약 보기</button>
         <button class="btn ghost full" data-action="backup-export">기록 백업하기</button>
         <button class="btn ghost full" data-action="backup-import">기록 불러오기</button>
@@ -1204,6 +1339,7 @@ app.addEventListener('click', (ev) => {
     }
     case 'settings':
       ui.nameDraft = null;
+      ui.parentOpen = false; // 설정을 새로 열면 '보호자용'은 접힌 채로
       ui.sheet = 'settings';
       break;
     case 'names-open':
@@ -1255,6 +1391,13 @@ app.addEventListener('click', (ev) => {
       st.rate = el.dataset.rate === 'slow' ? 'slow' : 'normal';
       saveSettings(st);
       speak('이 빠르기로 읽어 줄게요');
+      break;
+    }
+    case 'toggle-coach': {
+      const st = loadSettings();
+      st.coach = !st.coach;
+      saveSettings(st);
+      alertCache = null;
       break;
     }
     case 'summary-open':
@@ -1351,6 +1494,7 @@ app.addEventListener('click', (ev) => {
       return confirmMove();
     case 'cancel-preview':
       ui.preview = null;
+      ui.warn = false;
       break;
     case 'hint':
       return showHint();
@@ -1463,9 +1607,22 @@ app.addEventListener('change', (ev) => {
 function enterGame() {
   ui.screen = 'game';
   ui.sheet = hasSeenRules(ui.game?.rules.mode ?? 'capture') ? null : 'rules';
+  ui.alertSpoken = '';
+  if (!ui.sheet) announceAlerts(); // 이어 두는 판이 까망이 차례이고 알릴 것이 있으면
   render();
   scheduleAI();
 }
+
+// 설정의 '보호자용'이 펼쳐져 있는지 기억한다(안의 켜고 끄기를 눌러 화면을 다시 그려도 닫히지 않게).
+// toggle 이벤트는 위로 퍼지지 않아서 잡는 단계(capture)에서 듣는다
+app.addEventListener(
+  'toggle',
+  (ev) => {
+    const d = ev.target as HTMLDetailsElement;
+    if (d.classList?.contains('parent')) ui.parentOpen = d.open;
+  },
+  true,
+);
 
 // ───────── 시작 ─────────
 

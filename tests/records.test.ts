@@ -116,6 +116,7 @@ describe('한 줄 기록(판마다)', () => {
     expect(a.good).toEqual({ capture: 0, escape: 0 });
     expect(a.moves).toBe(7);
     expect(a.hints).toBeUndefined(); // 옛 판은 도와줘를 세지 않았음
+    expect(a.hintsFull).toBeUndefined();
     expect(log.find((e) => e.id === 2)!.margin).toBe(7);
     // 한 번 만든 뒤에는 다시 채우지 않는다(다시 보기 기록은 20판만 남으므로)
     store.setItem('baduk-history', '[]');
@@ -188,7 +189,7 @@ describe('기간별 요약', () => {
   const now = new Date(2026, 9, 26, 20, 0); // 10월 26일 저녁(기기 시간)
   const at = (day: number, hour = 12) => new Date(2026, 9, day, hour).toISOString();
   const log: Entry[] = [
-    entry(1, { endedAt: at(26), outcome: 'win', hints: 2, undos: 1, good: { capture: 3, escape: 1 }, missed: { 'missed-capture': 1 } }),
+    entry(1, { endedAt: at(26), outcome: 'win', hints: 2, undos: 1, hintsFull: 1, coach: true, good: { capture: 3, escape: 1 }, missed: { 'missed-capture': 1 } }),
     entry(2, { endedAt: at(25), outcome: 'loss', hints: 0, undos: 3, good: { capture: 1, escape: 0 }, missed: { 'self-atari': 2 } }),
     entry(3, { endedAt: at(20, 0), outcome: 'win', reason: 'resign' }), // 7일째 자정 — 들어감
     entry(4, { endedAt: at(19, 23), outcome: 'loss' }), // 8일 전 — 빠짐
@@ -210,7 +211,8 @@ describe('기간별 요약', () => {
 
   it('도와줘·되돌리기와 잘한 수·놓친 장면은 센 판으로만 나눈다', () => {
     const s = R.summarize(log, {}, undefined, now, 7);
-    expect(s.help).toEqual({ games: 2, hints: 2, undos: 4 });
+    // 정확한 자리까지 본 횟수는 그것을 센 판(도와줘 3단계 뒤)으로만 나눈다
+    expect(s.help).toEqual({ games: 2, hints: 2, undos: 4, fullGames: 1, full: 1 });
     expect(s.play).toEqual({ games: 2, capture: 4, escape: 1, missed: { 'missed-capture': 1, 'self-atari': 2 } });
   });
 
@@ -237,7 +239,7 @@ describe('요약 화면', () => {
   it('대국·도움·문제·강의 숫자가 보인다', () => {
     const log: Entry[] = [
       entry(1, { endedAt: new Date(2026, 9, 26, 9).toISOString(), outcome: 'win', hints: 1, undos: 0, good: { capture: 2, escape: 0 }, missed: {} }),
-      entry(2, { endedAt: new Date(2026, 9, 26, 10).toISOString(), outcome: 'loss', hints: 2, undos: 1, good: { capture: 0, escape: 1 }, missed: { 'own-eye': 1 } }),
+      entry(2, { endedAt: new Date(2026, 9, 26, 10).toISOString(), outcome: 'loss', hints: 2, undos: 1, hintsFull: 1, good: { capture: 0, escape: 1 }, missed: { 'own-eye': 1 } }),
       entry(3, { endedAt: new Date(2026, 9, 26, 11).toISOString(), outcome: 'win', reason: 'resign' }),
     ];
     const practice: import('../src/storage').PracticeLog = { '2026-10-26': { kill: [4, 3] } };
@@ -246,6 +248,7 @@ describe('요약 화면', () => {
     expect(html).toContain('★ 쉬워요');
     expect(html).toContain('67%'); // 3판 중 2판 이김
     expect(html).toContain('판마다 도와줘 <b>1.5번</b>');
+    expect(html).toContain('정확한 자리까지 본 건 판마다 1번'); // 센 판 한 판(entry 2)
     expect(html).toContain('하양이 기권 1판');
     expect(html).toContain('두 집 막기');
     expect(html).toContain('75%');

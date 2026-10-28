@@ -110,12 +110,10 @@ export interface Settings {
   rate: 'slow' | 'normal';
   /** 캐릭터 이름(비어 있으면 까망이·하양이). 글 속 이름 바꾸기는 `src/names.ts` */
   names?: { black: string; white: string };
-  /** 두는 중에 알려 주기(위험·잡을 기회 알림, 스스로 단수 확인). 보호자용, 기본 켬 */
-  coach: boolean;
 }
 
 export function loadSettings(): Settings {
-  return { v: 1, sound: true, voice: true, rate: 'normal', coach: true, ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
+  return { v: 1, sound: true, voice: true, rate: 'normal', ...(read<Partial<Settings>>(KEY_SETTINGS) ?? {}) } as Settings;
 }
 export function saveSettings(s: Settings): void {
   write(KEY_SETTINGS, s);
@@ -219,7 +217,7 @@ export interface GameLogEntry {
   undos?: number;
   /** 도와줘로 정확한 자리(3단계)까지 본 횟수(도와줘 3단계 전에 끝난 판에는 없음) */
   hintsFull?: number;
-  /** 두는 중에 알려 주기(위험·기회 알림, 스스로 단수 확인)를 켜고 둔 판인지 */
+  /** 두는 중에 알려 주기(위험·기회 알림, 스스로 단수 확인)를 켜고 둔 판인지. 2026-10-28에 그 기능을 지워 옛 판에만 있음 */
   coach?: boolean;
   /** 잘한 수(잡기·도망가기)와 놓친 장면 종류별 횟수 */
   good?: { capture: number; escape: number };

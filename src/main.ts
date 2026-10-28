@@ -5,20 +5,7 @@ import '@fontsource/gowun-dodum/latin-400.css';
 import './style.css';
 import { BLACK, EMPTY, WHITE, Game, opponent, type GameMode, type IllegalReason, type Stone } from './engine/rules';
 import { chooseMove, type Level } from './engine/ai/beginner';
-import {
-  alertText,
-  hintText,
-  NO_ALERTS,
-  planHint,
-  selfAtari,
-  SELF_ATARI_SUB,
-  SELF_ATARI_TEXT,
-  SELF_ATARI_TITLE,
-  turnAlerts,
-  type Alerts,
-  type HintPlan,
-  type HintStep,
-} from './coach';
+import { hintText, planHint, type HintPlan, type HintStep } from './coach';
 import { estimateDead, countDead } from './engine/ai/dead';
 import { hopeless } from './engine/ai/resign';
 import { pointFromEvent, renderBoard } from './ui/board';
@@ -137,14 +124,10 @@ const ui = {
   /** 도와줘 단계(0 = 아직 안 누름)와 이번 차례의 도와줘 계획(1~3단계가 같은 수를 가리키게) */
   hintStep: 0 as HintStep,
   hintPlan: null as HintPlan | null,
-  /** 미리 보기한 자리가 스스로 단수 자리인지(두는 중 알려 주기가 켜져 있을 때만) */
-  warn: false,
   /** 방금 잡혀 들어낸 돌(잠깐 흐리게 보여 줌) */
   ghosts: [] as { p: number; c: Stone }[],
   /** 잡힌 시각(다시 그려도 사라지는 움직임이 처음부터 다시 시작하지 않게) */
   ghostAt: 0,
-  /** 알림을 읽어 준 판(같은 판에서 두 번 읽지 않게) */
-  alertSpoken: '',
   /** 설정의 '보호자용'을 펼쳐 두었는지(켜고 끄기를 누르면 화면을 다시 그려도 닫히지 않게) */
   parentOpen: false,
   /** 기록 요약에서 고른 기간(일, 0 = 전체) */
@@ -278,10 +261,9 @@ function resetMarks() {
   ui.hintText = null;
   ui.hintStep = 0;
   ui.hintPlan = null;
-  ui.warn = false;
 }
 
-/** 지금 판의 수순(착수 좌표, 넘기기 -1) — 기록·복습·알림이 같은 모양으로 쓴다 */
+/** 지금 판의 수순(착수 좌표, 넘기기 -1) — 기록·복습이 같은 모양으로 쓴다 */
 function movesOf(g: Game): number[] {
   return g.moves.filter((m) => m.type !== 'resign').map((m) => (m.type === 'play' ? m.point : -1));
 }
@@ -289,29 +271,6 @@ function movesOf(g: Game): number[] {
 /** 처음부터 다시 둘 수 있는 기록(출발 배치 포함) */
 function specOf(g: Game) {
   return { mode: g.rules.mode, size: g.size, captureTarget: g.rules.captureTarget, moves: movesOf(g), ...(ui.setup ? { setup: ui.setup } : {}) };
-}
-
-const coachOn = () => loadSettings().coach;
-
-let alertCache: { key: string; a: Alerts } | null = null;
-/** 까망이 차례의 위험·기회 알림(같은 판이면 다시 계산하지 않음) */
-function currentAlerts(g: Game): Alerts {
-  if (!coachOn() || g.isOver || g.toMove !== HUMAN || ui.aiThinking) return NO_ALERTS;
-  const spec = specOf(g);
-  const key = `${g.size}:${g.rules.mode}:${spec.moves.join(',')}`;
-  if (alertCache?.key !== key) alertCache = { key, a: turnAlerts(g, spec, HUMAN) };
-  return alertCache.a;
-}
-
-/** 까망이 차례가 되면 알림을 한 번 읽어 준다(어디인지는 말하지 않음) */
-function announceAlerts() {
-  const g = ui.game;
-  if (!g) return;
-  const text = alertText(currentAlerts(g));
-  const key = alertCache?.key ?? '';
-  if (!text || ui.alertSpoken === key) return;
-  ui.alertSpoken = key;
-  speak(text);
 }
 
 /** 방금 잡힌 돌을 잠깐 흐리게 보여 준다 */
@@ -397,7 +356,6 @@ function scheduleAI() {
     persist();
     // 하양이가 잡아서 이기면 어느 돌이 잡혔는지 잠깐 보여 준 뒤 결과 창
     if (game.isOver) return finishGame(captured.length ? END_DELAY_MS : 0);
-    announceAlerts();
     render();
   }, AI_DELAY);
 }
@@ -558,7 +516,6 @@ function finishGame(delay = 0) {
     hints: ui.hints,
     undos: ui.undos,
     hintsFull: ui.hintsFull,
-    coach: coachOn(),
     good,
     missed,
     ...(res.reason === 'score' ? { margin: res.score.margin } : {}),
@@ -628,7 +585,6 @@ function showHint() {
   ui.hint = ui.hintStep === 3 ? ui.hintPlan.point : null;
   ui.hintText = hintText(ui.hintPlan, ui.hintStep);
   ui.preview = null;
-  ui.warn = false;
   persist();
   speak(ui.hintText);
   render();
@@ -638,22 +594,16 @@ function tapBoard(p: number | null) {
   const g = ui.game;
   if (!g || p == null || g.isOver) return;
   if (ui.aiThinking || g.toMove !== HUMAN) return showToast('하양이 차례예요. 조금만 기다려요');
-  if (ui.preview === p) {
-    // 같은 곳을 한 번 더 누르면 놓기. 스스로 단수 자리는 버릇처럼 두 번 눌러 놓지 않게 '놓기' 버튼으로만
-    if (ui.warn) return speak(SELF_ATARI_TEXT);
-    return confirmMove();
-  }
+  // 같은 곳을 한 번 더 누르면 놓기
+  if (ui.preview === p) return confirmMove();
   const r = g.check(p);
   if (!r.ok) {
     ui.preview = null;
-    ui.warn = false;
     showToast(ILLEGAL_TEXT[r.reason]);
     render();
     return;
   }
   ui.preview = p;
-  ui.warn = coachOn() && selfAtari(g, p);
-  if (ui.warn) speak(SELF_ATARI_TEXT);
   render();
 }
 
@@ -763,34 +713,23 @@ function gameHTML(): string {
   const canPass = humanTurn && (g.rules.mode === 'normal' || g.legalMoves().length === 0);
   const stuck = canPass && g.rules.mode === 'capture';
   const canUndo = g.moves.some((m) => m.color === HUMAN) && !ui.aiThinking && !g.isOver;
-  // 두는 중에 알려 주기: 위험(내 돌이 새로 단수)·기회(하양이 돌을 새로 잡을 수 있음). 어느 돌인지는 안 알려 줌
-  const alerts = humanTurn ? currentAlerts(g) : NO_ALERTS;
-  const alertMsg = alertText(alerts);
   const res = g.result;
   const endText =
     res?.reason === 'capture' ? (res.winner === HUMAN ? '와, 잡았어요!' : '앗, 잡혔어요!') : '다 두었어요';
   const status =
     ui.preview != null
-      ? ui.warn
-        ? `<div class="confirm warn">
-      <div class="confirm-text"><b>${SELF_ATARI_TITLE}</b><span>${SELF_ATARI_SUB}</span></div>
-      <button class="btn ghost" data-action="cancel-preview">아니요</button>
-      <button class="btn primary" data-action="confirm">놓기</button>
-    </div>`
-        : `<div class="confirm">
+      ? `<div class="confirm">
       <div class="confirm-text"><b>여기에 놓을까요?</b><span>한 번 더 눌러도 돼요</span></div>
       <button class="btn ghost" data-action="cancel-preview">아니요</button>
       <button class="btn primary" data-action="confirm">놓기</button>
     </div>`
-      : `<div class="guide ${ui.hintText ? 'has-hint' : alertMsg && !stuck ? 'alert' : ''}">${
+      : `<div class="guide ${ui.hintText ? 'has-hint' : ''}">${
           ui.hintText
             ? `${icon('bulb')}<span>${rich(ui.hintText)}</span>`
             : g.isOver
               ? `<span>${endText}</span>`
               : stuck
               ? '<span>놓을 곳이 없어요. 넘기기를 눌러요</span>'
-              : alertMsg
-              ? `${icon('help')}<span>${esc(alertMsg)}</span>`
               : humanTurn
               ? '<span>놓고 싶은 곳을 눌러요</span>'
               : '<span class="thinking">하양이가 생각하고 있어요…</span>'
@@ -818,14 +757,14 @@ function gameHTML(): string {
     </div>
     <div class="side">
       <div class="players">
-        <div class="player me ${g.toMove === BLACK ? 'turn' : ''} ${alerts.danger ? 'alert' : ''}">
-          ${stoneFace('black', 56, alerts.danger ? 'oops' : g.toMove === BLACK ? 'happy' : 'think')}
-          <span class="pname"><b>나 · 까망이</b><small>${alerts.danger ? '앗, 위험해요!' : g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
+        <div class="player me ${g.toMove === BLACK ? 'turn' : ''}">
+          ${stoneFace('black', 56, g.toMove === BLACK ? 'happy' : 'think')}
+          <span class="pname"><b>나 · 까망이</b><small>${g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
           <span class="pcount" aria-label="잡은 돌">${g.captures(BLACK)}</span>
         </div>
-        <div class="player ${g.toMove === WHITE ? 'turn' : ''} ${alerts.chance ? 'alert' : ''}">
-          ${stoneFace('white', 56, alerts.chance ? 'oops' : g.toMove === WHITE ? 'think' : 'happy')}
-          <span class="pname"><b>하양이</b><small>${alerts.chance ? '덜덜 떨고 있어요' : g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
+        <div class="player ${g.toMove === WHITE ? 'turn' : ''}">
+          ${stoneFace('white', 56, g.toMove === WHITE ? 'think' : 'happy')}
+          <span class="pname"><b>하양이</b><small>${g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
           <span class="pcount" aria-label="잡은 돌">${g.captures(WHITE)}</span>
         </div>
       </div>
@@ -1123,8 +1062,6 @@ function sheetHTML(): string {
     <details class="parent" ${ui.parentOpen ? 'open' : ''}>
       <summary>보호자용</summary>
       <div class="parent-in">
-        <button class="toggle" data-action="toggle-coach" role="switch" aria-checked="${st.coach}"><span>${icon('bulb')}두는 중에 알려 주기</span><span class="sw ${st.coach ? 'on' : ''}"></span></button>
-        <p class="sheet-p small">위험한 돌·잡을 수 있는 돌이 새로 생기면 얼굴과 말로 알려 주고(어디인지는 안 알려 줌), 스스로 숨구멍 하나(단수)가 되는 자리는 한 번 더 물어요.</p>
         <button class="btn ghost full" data-action="summary-open">${icon('chart')}기록 요약 보기</button>
         <button class="btn ghost full" data-action="backup-export">기록 백업하기</button>
         <button class="btn ghost full" data-action="backup-import">기록 불러오기</button>
@@ -1399,13 +1336,6 @@ app.addEventListener('click', (ev) => {
       speak('이 빠르기로 읽어 줄게요');
       break;
     }
-    case 'toggle-coach': {
-      const st = loadSettings();
-      st.coach = !st.coach;
-      saveSettings(st);
-      alertCache = null;
-      break;
-    }
     case 'summary-open':
       ensureGameLog(); // 처음 열면 남아 있는 최근 판들로 채운다
       ui.summaryDays = 7;
@@ -1500,7 +1430,6 @@ app.addEventListener('click', (ev) => {
       return confirmMove();
     case 'cancel-preview':
       ui.preview = null;
-      ui.warn = false;
       break;
     case 'hint':
       return showHint();
@@ -1613,8 +1542,6 @@ app.addEventListener('change', (ev) => {
 function enterGame() {
   ui.screen = 'game';
   ui.sheet = hasSeenRules(ui.game?.rules.mode ?? 'capture') ? null : 'rules';
-  ui.alertSpoken = '';
-  if (!ui.sheet) announceAlerts(); // 이어 두는 판이 까망이 차례이고 알릴 것이 있으면
   render();
   scheduleAI();
 }

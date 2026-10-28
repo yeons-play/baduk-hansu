@@ -412,20 +412,12 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .sum-cell.ok b { color: var(--mint-ink); }
 .sum-note { font-size: 0.9rem; color: var(--sub); }
 
-/* 두는 중에 알려 주기 */
-.player.alert { border-color: var(--pink-ink); background: #FFF5F7; animation: wiggle 0.45s ease-in-out 1; }
-.player.alert .pname small { color: var(--pink-ink); font-weight: 700; }
-@keyframes wiggle { 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
-.guide.alert { background: var(--pink); color: #8E2F44; }
-.guide.alert .ic { color: var(--pink-ink); }
-.confirm.warn { border-color: var(--pink-ink); background: #FFF5F7; }
-.confirm.warn .confirm-text b { color: var(--pink-ink); }
-.confirm.warn .confirm-text span { color: #8E2F44; }
+/* 도와줘 2단계 네모 */
 .hint-zone { animation: pulse 1.4s ease-in-out infinite; }
 /* 방금 잡힌 돌: 판에서 집어 올리듯 작아지며 사라짐(GHOST_MS와 같은 시간) */
 .board-svg .captured { transform-box: fill-box; transform-origin: center; animation: ghost-out 0.55s ease-in forwards; }
 @keyframes ghost-out { from { opacity: 1; transform: scale(1); } 30% { opacity: 1; transform: scale(1.08); } to { opacity: 0; transform: scale(0.3); } }
 @media (prefers-reduced-motion: reduce) {
-  .player.alert, .hint-zone { animation: none; }
+  .hint-zone { animation: none; }
   .board-svg .captured { animation: none; opacity: 0; }
 }

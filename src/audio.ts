@@ -2,7 +2,7 @@
 // 아이패드·아이폰은 첫 터치 이후에만 소리가 나므로 unlockAudio()를 첫 터치 때 부른다.
 import { loadSettings } from './storage';
 
-export type Sfx = 'stone' | 'capture' | 'correct' | 'wrong' | 'win';
+export type Sfx = 'stone' | 'capture' | 'correct' | 'wrong' | 'win' | 'gem';
 
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
@@ -61,6 +61,9 @@ export function sfx(name: Sfx): void {
     o.stop(t + 0.22);
   } else if (name === 'win') {
     [523, 659, 784, 1047].forEach((f, i) => tone(c, t + i * 0.11, f, 0.25, 0.14, 'triangle'));
+  } else if (name === 'gem') {
+    // 보석이 '짜랑' 쏟아지는 소리: 높은 음 여러 개를 빠르게
+    [1568, 2093, 1760, 2349, 2637].forEach((f, i) => tone(c, t + i * 0.07, f, 0.18, 0.09, 'sine'));
   }
 }
 

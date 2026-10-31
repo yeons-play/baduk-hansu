@@ -379,6 +379,13 @@ with sync_playwright() as pw:
               offered = p.locator('[data-action="resign-accept"]').count() == 1
       p.click('[data-action="resign-accept"]'); p.wait_for_timeout(300)
       ok('받을래요 → 이겼어요 결과', '이겼어요' in p.locator('.sheet .result-title').inner_text(), p.locator('.sheet').inner_text()[:60] if p.locator('.sheet').count() else '')
+      # 기권으로 이겨도 대충 세어 볼 수 있다(구경용, 결과는 그대로)
+      ok('기권 받은 결과에 집 세어 보기(구경)', p.locator('.sheet [data-action="peek-open"]').count() == 1)
+      p.click('.sheet [data-action="peek-open"]'); p.wait_for_timeout(600)
+      ok('대충 센 집·점수와 짐작이라는 안내', p.locator('.sheet .board-svg').count() == 1 and '짐작' in p.locator('.sheet').inner_text() and '합계' in p.locator('.sheet').inner_text(), p.locator('.sheet').inner_text()[:120])
+      shot(p, '29-peek')
+      p.click('.sheet [data-action="peek-close"]'); p.wait_for_timeout(200)
+      ok('결과로 돌아감', '이겼어요' in p.locator('.sheet .result-title').inner_text())
       p.click('[data-action="go-home"]'); p.wait_for_timeout(200)
 
       # 진짜 바둑: 집 경계가 다 정해진 판을 이어서 두고, 넘기기 → 하양이도 넘김 → 집 세기 → 더 두기 → 끝내기
@@ -511,7 +518,10 @@ with sync_playwright() as pw:
       ok('결과 화면에 놓친 장면 다시 풀기', p.locator('.sheet [data-action="scene-retry"]').count() == 1)
       gems = p.evaluate("JSON.parse(localStorage.getItem('baduk-gems') || '{}')")
       # 쉬워요·따내기 이김 6~10개 + 잘한 잡기 1개
-      ok('이기면 보석(결과 화면·보석함)', p.locator('.sheet .gem-get').count() == 1 and 7 <= gems.get('count', 0) <= 11 and f"+{gems.get('count')}" in p.locator('.sheet .gem-get').inner_text(), gems)
+      ok('이기면 보물상자(열기 전엔 개수 안 보임, 보석은 이미 들어감)', p.locator('.sheet .chest-btn').count() == 1 and p.locator('.sheet .gem-get').count() == 0 and 7 <= gems.get('count', 0) <= 11, gems)
+      shot(p, '24-chest')
+      p.click('.sheet [data-action="chest-open"]'); p.wait_for_timeout(300)
+      ok('상자를 누르면 보석 개수', p.locator('.sheet .gem-get').count() == 1 and f"+{gems.get('count')}" in p.locator('.sheet .gem-get').inner_text() and p.evaluate("JSON.parse(localStorage.getItem('baduk-gems')).count") == gems.get('count'))
       before_gems = gems.get('count', 0)
       shot(p, '25-result-praise-scene')
       p.click('.sheet [data-action="scene-retry"]'); p.wait_for_timeout(300)

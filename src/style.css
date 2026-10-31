@@ -390,8 +390,8 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .name-row { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
 .name-row > svg, .name-row > .face { flex: none; }
 .name-field { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.name-input { width: 100%; min-height: 3.4rem; padding: 0 14px; border: 3px solid var(--line2); border-radius: var(--r-md); font-family: var(--title); font-size: 1.4rem; background: transparent; color: inherit; }
-.name-input:focus { outline: none; border-color: var(--primary); }
+.name-input, .goal-gift { width: 100%; min-height: 3.4rem; padding: 0 14px; border: 3px solid var(--line2); border-radius: var(--r-md); font-family: var(--title); font-size: 1.4rem; background: transparent; color: inherit; }
+.name-input:focus, .goal-gift:focus { outline: none; border-color: var(--primary); }
 .name-hint { padding-left: 70px; min-height: 0; }
 .name-hint .chip { display: inline-flex; flex-direction: row; padding: 8px 14px; font-size: 1.05rem; margin-top: 6px; }
 .name-preview { margin: 14px 0 4px; padding: 12px 14px; border-radius: var(--r-md); background: #FFF8E6; color: #5B4300; font-size: 1.1rem; text-align: center; }
@@ -421,3 +421,29 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
   .hint-zone { animation: none; }
   .board-svg .captured { animation: none; opacity: 0; }
 }
+
+/* ───────── 보석 ───────── */
+.gem { flex: none; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15)); }
+.gem-box { display: flex; align-items: center; gap: 14px; background: var(--card); border: 2px solid var(--line); border-radius: var(--r-md); padding: 12px 18px; }
+.gem-box.done { border-color: var(--primary); }
+.gem-box-in { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gem-box-label { font-size: 0.95rem; color: var(--sub); }
+.gem-box-in > b { font-family: var(--title); font-weight: 400; font-size: 1.8rem; line-height: 1.1; }
+.gem-box-sub { font-size: 1rem; color: var(--sub); }
+.gem-box-sub b { color: var(--primary); font-weight: 400; font-family: var(--title); }
+.gem-bar { height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.gem-bar i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #7FD3FF, #9B5BE0); }
+.gem-get { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 12px; padding: 10px 14px; border-radius: var(--r-md); background: rgba(127, 211, 255, 0.16); }
+.gem-get > .gem { animation: pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) 0.3s both; }
+.gem-get b { font-family: var(--title); font-weight: 400; font-size: 1.7rem; color: #2E8BD8; }
+.gem-get.big b { font-size: 2.1rem; }
+.gem-get span { flex-basis: 100%; text-align: center; font-size: 0.95rem; color: var(--sub); }
+.gem-rain { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.gem-rain span { position: absolute; left: 50%; top: 50%; margin: -13px; animation: gem-drop 0.8s ease-in var(--d) both; }
+@keyframes gem-drop { from { transform: translate(var(--x), -120px) rotate(-30deg); opacity: 0; } 30% { opacity: 1; } to { transform: translate(calc(var(--x) * 0.2), 0) rotate(0); opacity: 0; } }
+.gem-tag { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; font-family: var(--title); color: #2E8BD8; }
+@media (prefers-reduced-motion: reduce) { .gem-get > .gem, .gem-rain span { animation: none; } .gem-rain { display: none; } }
+.home-head-r { display: flex; align-items: center; gap: 10px; flex: none; }
+.gem-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 6px 10px; border-radius: 999px; background: var(--card); border: 2px solid var(--line); }
+.gem-pill b { font-family: var(--title); font-weight: 400; font-size: 1.5rem; color: #2E8BD8; }
+.gem-tag { flex: none; white-space: nowrap; }

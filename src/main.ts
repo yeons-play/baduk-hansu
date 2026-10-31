@@ -9,7 +9,8 @@ import { hintText, planHint, type HintPlan, type HintStep } from './coach';
 import { estimateDead, countDead } from './engine/ai/dead';
 import { hopeless } from './engine/ai/resign';
 import { pointFromEvent, renderBoard } from './ui/board';
-import { type Mood, starBurst, stoneFace } from './ui/faces';
+import { type Mood, gemIcon, gemRain, starBurst, stoneFace } from './ui/faces';
+import { GEM_RULES, gemsForGame, type GemAward } from './gems';
 import {
   clearGame,
   hasSeenRules,
@@ -36,6 +37,10 @@ import {
   addGameLog,
   loadGameLog,
   loadPracticeLog,
+  loadGems,
+  addGems,
+  setGemGoal,
+  spendGemGoal,
   type GameSetup,
   type SavedScene,
 } from './storage';
@@ -74,7 +79,8 @@ type Sheet =
   | 'key'
   | 'names'
   | 'resign-offer'
-  | 'summary';
+  | 'summary'
+  | 'gem-goal';
 
 const ui = {
   /** 이름 바꾸기 화면에서 고치는 중인 이름(저장 전) */
@@ -132,6 +138,15 @@ const ui = {
   parentOpen: false,
   /** 기록 요약에서 고른 기간(일, 0 = 전체) */
   summaryDays: 7,
+  /** 방금 끝난 판에서 받은 보석(결과 화면) */
+  gems: null as GemAward | null,
+  /** '놓친 장면 다시 풀기'를 끝내면 보석을 줄 판 번호, 이미 준 판 번호(한 판에 한 번) */
+  sceneGemFor: 0,
+  sceneGemGiven: 0,
+  /** 방금 끝낸 연습에서 받은 보석 */
+  practiceGems: 0,
+  /** 보석 목표 정하기 화면에서 고치는 중인 값 */
+  goalDraft: null as { count: number; gift: string } | null,
 };
 
 const HUMAN = BLACK;
@@ -480,6 +495,11 @@ function finishGame(delay = 0) {
   addScenes(scenes);
   ui.lastScenes = scenes;
   ui.praise = praiseText(good);
+  // 보석: 끝까지 두면 늘 받는다(그만하기만 빼고). 몇 개인지만 조금씩 다르다
+  const quit = res.reason === 'resign' && outcome === 'loss';
+  const gems = gemsForGame({ outcome, quit, mode: g.rules.mode, level: ui.level, good });
+  addGems(gems.total);
+  ui.gems = gems;
   // 보호자 요약용 한 줄 기록: 처음이면 남아 있는 다시 보기 기록으로 먼저 채운 뒤 이 판을 더한다
   ensureGameLog();
   const endedAt = new Date(id).toISOString();
@@ -518,6 +538,7 @@ function finishGame(delay = 0) {
     hintsFull: ui.hintsFull,
     good,
     missed,
+    gems: gems.total,
     ...(res.reason === 'score' ? { margin: res.score.margin } : {}),
     ...(ui.setup ? { setup: true } : {}),
   });
@@ -526,7 +547,8 @@ function finishGame(delay = 0) {
   const show = () => {
     ui.sheet = 'result';
     if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
-    speak(`${ui.result.title} ${ui.result.body} ${ui.praise}`);
+    if (gems.total) window.setTimeout(() => sfx('gem'), ui.result.win ? 750 : 300);
+    speak(`${ui.result.title} ${ui.result.body} ${ui.praise} ${gems.total ? `보석 ${gems.total}개 받았어요!` : ''}`);
     render();
   };
   window.clearTimeout(resultTimer);
@@ -661,6 +683,61 @@ function statsHTML(withDraws = false): string {
   </div>`;
 }
 
+/** 결과 화면: 받은 보석(그만하기로 끝낸 판은 없음) */
+function gemResultHTML(): string {
+  const g = ui.gems;
+  if (!g) return '';
+  if (!g.total) return '<p class="sheet-p small center">끝까지 두면 보석을 받아요!</p>';
+  const why = g.bonus ? `끝까지 둬서 ${g.base}개 + 잘한 수 ${g.bonus}개` : '끝까지 둬서 받았어요';
+  return `<div class="gem-get ${ui.result.win ? 'big' : ''}">${gemRain(g.total)}${gemIcon(ui.result.win ? 56 : 44, ui.lastFinishedId)}<b>보석 +${g.total}</b><span>${why}</span></div>`;
+}
+
+/** 홈: 모은 보석과 선물 목표 */
+function gemBoxHTML(): string {
+  const b = loadGems();
+  const goal = b.goal;
+  if (!goal) {
+    return `<div class="gem-box">${gemIcon(48, 0)}<div class="gem-box-in"><span class="gem-box-label">내 보석</span><b>${b.count}개</b>${
+      b.count ? '' : '<span class="gem-box-sub">끝까지 두면 보석을 받아요</span>'
+    }</div></div>`;
+  }
+  const gift = esc(goal.gift || '약속한 선물');
+  const left = goal.count - b.count;
+  const pctDone = Math.min(100, Math.round((100 * b.count) / goal.count));
+  return `<div class="gem-box ${left <= 0 ? 'done' : ''}">${gemIcon(48, 0)}<div class="gem-box-in">
+    <span class="gem-box-label">내 보석</span><b>${b.count}개</b>
+    <div class="gem-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${goal.count}" aria-valuenow="${Math.min(b.count, goal.count)}"><i style="width:${pctDone}%"></i></div>
+    <span class="gem-box-sub">${left <= 0 ? `다 모았어요! <b>${gift}</b> 받으러 가요` : `<b>${gift}</b>까지 ${left}개 남았어요`}</span>
+  </div></div>`;
+}
+
+const GOAL_CHOICES = [30, 50, 100, 200];
+
+/** 보호자용: 보석 목표·선물 정하기, 선물 준 뒤 보석 쓰기 */
+function gemGoalSheetHTML(): string {
+  const b = loadGems();
+  const d = ui.goalDraft ?? { count: b.goal?.count ?? 50, gift: b.goal?.gift ?? '' };
+  const chips = GOAL_CHOICES.map(
+    (n) =>
+      `<button role="radio" aria-checked="${d.count === n}" class="chip ${d.count === n ? 'on' : ''}" data-action="goal-count" data-n="${n}">${n}개</button>`,
+  ).join('');
+  const reached = b.goal && b.count >= b.goal.count;
+  return `<h2>보석 목표·선물</h2>
+    <p class="sheet-p small">지금 ${b.count}개 · 지금까지 모은 것 ${b.earned}개</p>
+    <p class="sheet-p small">판을 끝까지 두면 보석을 받아요. 이기면 더 많이, 하양이가 어렵거나 진짜 바둑이면 더 많이 받아요. 그만하기로 끝내면 없어요.</p>
+    <p class="sheet-label">몇 개 모으면 선물을 줄까요?</p>
+    <div class="chips" role="radiogroup" aria-label="목표 보석 수">${chips}</div>
+    <p class="sheet-label">선물</p>
+    <input class="goal-gift name-input-like" type="text" maxlength="30" autocomplete="off" enterkeyhint="done" value="${esc(d.gift)}" placeholder="예: 아이스크림" />
+    ${
+      reached
+        ? `<div class="feedback ok">${icon('check')}<span>목표만큼 모았어요! 선물을 줬으면 아래 버튼을 눌러요. 보석 ${b.goal!.count}개가 빠져요.</span></div>
+    <button class="btn ghost full" data-action="goal-spend">선물 줬어요</button>`
+        : ''
+    }
+    <div class="row2"><button class="btn ghost" data-action="goal-clear">목표 지우기</button><button class="btn primary" data-action="goal-save">저장</button></div>`;
+}
+
 function homeHTML(): string {
   const saved = loadGame();
   return `<main class="screen home">
@@ -669,7 +746,10 @@ function homeHTML(): string {
       <div class="brand"><span class="wordmark">바둑한수</span><span class="seal" aria-hidden="true">手</span></div>
       <p class="sub">하루 한 수씩, 바둑이랑 놀아요</p>
     </div>
-    <button class="round-btn" data-action="settings" aria-label="설정">${icon('gear')}</button>
+    <div class="home-head-r">
+      <span class="gem-pill" aria-label="내 보석 ${loadGems().count}개">${gemIcon(30, 0)}<b>${loadGems().count}</b></span>
+      <button class="round-btn" data-action="settings" aria-label="설정">${icon('gear')}</button>
+    </div>
   </header>
 
   ${learnCardHTML()}
@@ -701,6 +781,8 @@ function homeHTML(): string {
       <span class="card-sub">${practiceOpenCount() ? `연습 ${practiceOpenCount()}가지 열렸어요` : '4강을 배우면 열려요'}</span>
     </button>
   </div>
+
+  ${gemBoxHTML()}
 
   ${statsHTML()}
 </main>`;
@@ -1063,6 +1145,7 @@ function sheetHTML(): string {
       <summary>보호자용</summary>
       <div class="parent-in">
         <button class="btn ghost full" data-action="summary-open">${icon('chart')}기록 요약 보기</button>
+        <button class="btn ghost full" data-action="gem-goal-open">${gemIcon(24, 0)}보석 목표·선물 정하기</button>
         <button class="btn ghost full" data-action="backup-export">기록 백업하기</button>
         <button class="btn ghost full" data-action="backup-import">기록 불러오기</button>
         <input type="file" id="backup-file" accept="application/json,.json" hidden />
@@ -1079,6 +1162,8 @@ function sheetHTML(): string {
     <div class="row2"><button class="btn ghost" data-action="resign-decline">더 둘래요</button><button class="btn primary" data-action="resign-accept">받을래요!</button></div>`;
   } else if (ui.sheet === 'names') {
     body = namesSheetHTML();
+  } else if (ui.sheet === 'gem-goal') {
+    body = gemGoalSheetHTML();
   } else if (ui.sheet === 'summary') {
     const lp = loadLessons();
     const s = summarize(loadGameLog(), loadPracticeLog(), lp.at, new Date(), ui.summaryDays || null);
@@ -1110,6 +1195,7 @@ function sheetHTML(): string {
     body = `<div class="result-face">${starBurst()}${stoneFace('black', 120, 'wow')}</div>
     <h2 class="result-title">${l.steps.length}문제 다 풀었어요!</h2>
     <p class="sheet-p center">${rich(`**${l.title}(${l.term})** 연습 끝. 정말 잘했어요!`)}</p>
+    ${ui.practiceGems ? `<div class="gem-get">${gemRain(ui.practiceGems)}${gemIcon(44, 2)}<b>보석 +${ui.practiceGems}</b><span>놓친 장면을 다시 풀었어요!</span></div>` : ''}
     <div class="row2"><button class="btn ghost" data-action="tab" data-tab="puzzle">목록으로</button>${more}</div>`;
   } else if (ui.sheet === 'key' && ui.keyCard) {
     const c = ui.keyCard;
@@ -1125,7 +1211,8 @@ function sheetHTML(): string {
     body = `<div class="result-face">${r.win ? starBurst() : ''}${stoneFace('black', 120, r.mood)}</div>
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
     ${ui.praise ? `<div class="feedback ok praise">${icon('check')}<span>${rich(ui.praise)}</span></div>` : ''}
-    ${ui.lastScenes.length ? `<button class="btn ghost full" data-action="scene-retry">${icon('grid')}놓친 장면 다시 풀어 볼까요?</button>` : ''}
+    ${gemResultHTML()}
+    ${ui.lastScenes.length ? `<button class="btn ghost full" data-action="scene-retry">${icon('grid')}놓친 장면 다시 풀어 볼까요?${ui.sceneGemGiven !== ui.lastFinishedId ? `<span class="gem-tag">${gemIcon(22, 2)}+${GEM_RULES.sceneRetry}</span>` : ''}</button>` : ''}
     <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>
     ${ui.lastFinishedId ? `<button class="btn text full" data-action="review-open" data-id="${ui.lastFinishedId}">${icon('undo')}둔 수 다시 보기(복습)</button>` : ''}`;
   }
@@ -1135,6 +1222,7 @@ function sheetHTML(): string {
     ui.sheet === 'settings' ||
     ui.sheet === 'names' ||
     ui.sheet === 'summary' ||
+    ui.sheet === 'gem-goal' ||
     ui.sheet === 'reset-lessons' ||
     ui.sheet === 'pass' ||
     ui.sheet === 'key';
@@ -1227,10 +1315,12 @@ app.addEventListener('click', (ev) => {
       break;
     }
     case 'scene-retry':
-      // 방금 판에서 놓친 장면 + 같은 기술의 새 문제 두 개
+      // 방금 판에서 놓친 장면 + 같은 기술의 새 문제 두 개. 끝까지 풀면 보석(그 판에 한 번)
+      ui.sceneGemFor = ui.lastFinishedId;
       if (ui.lastScenes.length) startLesson(makeSceneLesson(ui.lastScenes, 2));
       break;
     case 'scenes-open': {
+      ui.sceneGemFor = 0;
       const list = loadScenes().slice(0, COUNT);
       if (list.length) startLesson(makeSceneLesson(list));
       break;
@@ -1242,8 +1332,16 @@ app.addEventListener('click', (ev) => {
       if (!lp?.next()) break;
       if (lp.lesson.practice) {
         markPracticeDone(lp.lesson.practice);
+        ui.practiceGems = 0;
+        if (lp.lesson.practice === 'scene' && ui.sceneGemFor && ui.sceneGemFor !== ui.sceneGemGiven) {
+          ui.sceneGemGiven = ui.sceneGemFor;
+          ui.practiceGems = GEM_RULES.sceneRetry;
+          addGems(ui.practiceGems);
+          window.setTimeout(() => sfx('gem'), 700);
+        }
+        ui.sceneGemFor = 0;
         ui.sheet = 'practice-done';
-        speak(`${lp.lesson.steps.length}문제 다 풀었어요! 정말 잘했어요!`);
+        speak(`${lp.lesson.steps.length}문제 다 풀었어요! 정말 잘했어요!${ui.practiceGems ? ` 보석 ${ui.practiceGems}개 받았어요!` : ''}`);
       } else {
         markLessonDone(lp.lesson.id);
         ui.sheet = 'lesson-done';
@@ -1284,6 +1382,34 @@ app.addEventListener('click', (ev) => {
       ui.nameDraft = null;
       ui.parentOpen = false; // 설정을 새로 열면 '보호자용'은 접힌 채로
       ui.sheet = 'settings';
+      break;
+    case 'gem-goal-open':
+      ui.goalDraft = null;
+      ui.sheet = 'gem-goal';
+      break;
+    case 'goal-count': {
+      const b = loadGems();
+      const cur = ui.goalDraft ?? { count: b.goal?.count ?? 50, gift: b.goal?.gift ?? '' };
+      ui.goalDraft = { ...cur, count: Number(el.dataset.n) || 50 };
+      break;
+    }
+    case 'goal-save': {
+      const b = loadGems();
+      const d = ui.goalDraft ?? { count: b.goal?.count ?? 50, gift: b.goal?.gift ?? '' };
+      setGemGoal(d);
+      ui.goalDraft = null;
+      ui.sheet = 'settings';
+      showToast('보석 목표를 정했어요');
+      break;
+    }
+    case 'goal-clear':
+      setGemGoal(null);
+      ui.goalDraft = null;
+      ui.sheet = 'settings';
+      showToast('보석 목표를 지웠어요');
+      break;
+    case 'goal-spend':
+      if (spendGemGoal()) showToast('선물 축하해요! 다시 모아요');
       break;
     case 'names-open':
       ui.nameDraft = loadNames();
@@ -1509,6 +1635,11 @@ app.addEventListener('input', (ev) => {
     if (pv) pv.textContent = namePreview(ui.nameDraft);
     const hint = app.querySelector(`.name-hint[data-for="${who}"]`);
     if (hint) hint.innerHTML = nameHintHTML(who, input.value);
+    return;
+  }
+  if (input.classList.contains('goal-gift') && ui.sheet === 'gem-goal') {
+    const b = loadGems();
+    ui.goalDraft = { ...(ui.goalDraft ?? { count: b.goal?.count ?? 50, gift: b.goal?.gift ?? '' }), gift: input.value };
     return;
   }
   if (!input.classList.contains('rv-seek') || !ui.review) return;

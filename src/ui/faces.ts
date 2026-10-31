@@ -45,3 +45,30 @@ export function starBurst(): string {
   }).join('');
   return `<div class="burst" aria-hidden="true">${stars}</div>`;
 }
+
+/** 보석 한 알(홈·결과 화면). 색은 몇 가지 중 하나 */
+export function gemIcon(size: number, hue = 0): string {
+  const c = [
+    ['#7FD3FF', '#2E8BD8', '#1B5FA8'],
+    ['#FF9FB8', '#E8476E', '#A82648'],
+    ['#9BF0C8', '#2FB97E', '#1C7A52'],
+    ['#E3B8FF', '#9B5BE0', '#6331A3'],
+  ][((hue % 4) + 4) % 4];
+  return `<svg class="gem" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+<path d="M28 18h44l18 22-40 46-40-46z" fill="${c[1]}"/>
+<path d="M28 18l-18 22h80L72 18z" fill="${c[0]}"/>
+<path d="M10 40h80L50 86z" fill="${c[2]}" opacity="0.55"/>
+<path d="M36 40L50 18l14 22-14 46z" fill="#FFFFFF" opacity="0.28"/>
+<path d="M28 18h44l18 22-40 46-40-46z" fill="none" stroke="${c[2]}" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="34" cy="28" r="4" fill="#FFFFFF" opacity="0.9"/>
+</svg>`;
+}
+
+/** 보석이 위에서 떨어지며 쌓이는 움직임(결과 화면) */
+export function gemRain(n: number): string {
+  const k = Math.min(12, Math.max(3, n));
+  return `<div class="gem-rain" aria-hidden="true">${Array.from(
+    { length: k },
+    (_, i) => `<span style="--x:${((i * 37) % 100) - 50}px;--d:${i * 70}ms">${gemIcon(26, i)}</span>`,
+  ).join('')}</div>`;
+}

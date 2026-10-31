@@ -226,6 +226,8 @@ export interface GameLogEntry {
   margin?: number;
   /** 출발 판 놀이(빈 판이 아닌 배치에서 시작) */
   setup?: boolean;
+  /** 이 판에서 받은 보석(보석 기능 전에 끝난 판에는 없음) */
+  gems?: number;
 }
 
 /** 한 줄 기록을 만든 적이 있는지(없으면 처음 한 번은 남아 있는 다시 보기 기록으로 채운다) */
@@ -330,6 +332,58 @@ export function markPracticeDone(skill: string): PracticeProgress {
   p.done[skill] = (p.done[skill] ?? 0) + 1;
   write(KEY_PRACTICE, p);
   return p;
+}
+
+// ───────── 보석 ─────────
+const KEY_GEMS = 'baduk-gems';
+
+export interface GemGoal {
+  /** 모으면 선물을 받는 보석 수 */
+  count: number;
+  /** 보호자가 정한 선물(비어 있으면 '약속한 선물') */
+  gift: string;
+}
+
+export interface GemBox {
+  v: 1;
+  /** 지금 가진 보석(선물로 바꾸면 줄어듦) */
+  count: number;
+  /** 지금까지 모은 보석(줄지 않음) */
+  earned: number;
+  goal?: GemGoal;
+}
+
+export function loadGems(): GemBox {
+  const g = read<GemBox>(KEY_GEMS);
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
+  if (!g || typeof g !== 'object') return { v: 1, count: 0, earned: 0 };
+  const goal = g.goal && n(g.goal.count) > 0 ? { count: n(g.goal.count), gift: String(g.goal.gift ?? '') } : undefined;
+  return { v: 1, count: n(g.count), earned: n(g.earned), ...(goal ? { goal } : {}) };
+}
+export function addGems(n: number): GemBox {
+  const g = loadGems();
+  if (n > 0) {
+    g.count += n;
+    g.earned += n;
+    write(KEY_GEMS, g);
+  }
+  return g;
+}
+/** 보호자가 목표를 정한다(null이면 지움) */
+export function setGemGoal(goal: GemGoal | null): GemBox {
+  const g = loadGems();
+  if (goal && goal.count > 0) g.goal = { count: Math.floor(goal.count), gift: goal.gift.trim().slice(0, 30) };
+  else delete g.goal;
+  write(KEY_GEMS, g);
+  return g;
+}
+/** 선물을 주고 목표만큼 보석을 쓴다. 모자라면 아무것도 바꾸지 않고 false */
+export function spendGemGoal(): boolean {
+  const g = loadGems();
+  if (!g.goal || g.count < g.goal.count) return false;
+  g.count -= g.goal.count;
+  write(KEY_GEMS, g);
+  return true;
 }
 
 // ───────── 백업 ─────────

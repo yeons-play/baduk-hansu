@@ -142,6 +142,7 @@ with sync_playwright() as pw:
       p.click('[data-action="resign"]')
       p.wait_for_timeout(200)
       ok('기권 후 결과 시트', p.locator('.result-title').count() == 1)
+      ok('그만하기로 끝내면 보석 없음', p.locator('.sheet .gem-get').count() == 0 and '끝까지 두면 보석' in p.locator('.sheet').inner_text() and p.evaluate("(JSON.parse(localStorage.getItem('baduk-gems') || '{}').count || 0)") == 0)
       shot(p, '6-result')
       p.click('[data-action="go-home"]')
       p.wait_for_timeout(200)
@@ -496,6 +497,7 @@ with sync_playwright() as pw:
       P5 = lambda x, y: y * 5 + x
       seq = [(1, 2), (4, 0), (2, 1), (0, 4), (3, 2), (4, 1), (1, 3), (0, 0), (3, 3), (4, 4), (2, 4), (2, 2), (0, 2)]
       p.evaluate("m => localStorage.setItem('baduk-current-game', JSON.stringify({v: 1, mode: 'capture', size: 5, level: 1, captureTarget: 1, moves: m, savedAt: ''}))", [P5(x, y) for x, y in seq])
+      p.evaluate("localStorage.removeItem('baduk-gems')")  # 앞에서 받은 보석은 빼고 이 판만 센다
       p.reload(); p.wait_for_timeout(400)
       p.click('.play-card.capture'); p.wait_for_timeout(150)
       p.click('[data-action="resume"]'); p.wait_for_timeout(1500)
@@ -507,6 +509,10 @@ with sync_playwright() as pw:
       # 잡힌 돌 효과가 회색 버튼(.btn.ghost)까지 흐리게 만들던 문제(10/27) 다시 생기지 않게
       ok('결과 창 버튼은 또렷함(잡힌 돌 효과가 버튼에 번지지 않음)', p.evaluate("getComputedStyle(document.querySelector('.sheet [data-action=\"go-home\"]')).opacity") == '1')
       ok('결과 화면에 놓친 장면 다시 풀기', p.locator('.sheet [data-action="scene-retry"]').count() == 1)
+      gems = p.evaluate("JSON.parse(localStorage.getItem('baduk-gems') || '{}')")
+      # 쉬워요·따내기 이김 6~10개 + 잘한 잡기 1개
+      ok('이기면 보석(결과 화면·보석함)', p.locator('.sheet .gem-get').count() == 1 and 7 <= gems.get('count', 0) <= 11 and f"+{gems.get('count')}" in p.locator('.sheet .gem-get').inner_text(), gems)
+      before_gems = gems.get('count', 0)
       shot(p, '25-result-praise-scene')
       p.click('.sheet [data-action="scene-retry"]'); p.wait_for_timeout(300)
       ok('놓친 장면 문제(그 판 그대로 5줄)', p.locator('.lesson-screen .board-svg').get_attribute('aria-label') == '5줄 바둑판' and '놓친 장면' in p.locator('.lesson-card').inner_text())
@@ -525,8 +531,21 @@ with sync_playwright() as pw:
       tap_point(p, 2, 3, size=5, board='.lesson-screen .board-svg'); p.wait_for_timeout(200)
       p.click('[data-action="lesson-next"]'); p.wait_for_timeout(300)
       ok('한 번에 맞히면 목록에서 빠짐', p.evaluate("JSON.parse(localStorage.getItem('baduk-scenes') || '[]').length") == 0)
+      ok('문제 놀이 탭에서 푼 놓친 장면은 보석 없음(반복해서 모으기 방지)', p.locator('.sheet .gem-get').count() == 0 and p.evaluate("JSON.parse(localStorage.getItem('baduk-gems')).count") == before_gems)
       p.click('.sheet [data-action="tab"][data-tab="puzzle"]'); p.wait_for_timeout(150)
       p.click('.tabbar [data-tab="home"]'); p.wait_for_timeout(150)
+      ok('홈에 내 보석', p.locator('.home .gem-box').count() == 1 and str(before_gems) in p.locator('.home .gem-box').inner_text())
+      # 보호자가 목표를 정하면 홈에 남은 개수
+      p.click('[data-action="settings"]'); p.wait_for_timeout(150)
+      p.click('details.parent summary'); p.wait_for_timeout(100)
+      p.click('[data-action="gem-goal-open"]'); p.wait_for_timeout(150)
+      p.click('[data-action="goal-count"][data-n="30"]'); p.wait_for_timeout(100)
+      p.fill('.goal-gift', '아이스크림')
+      shot(p, '27-gem-goal')
+      p.click('[data-action="goal-save"]'); p.wait_for_timeout(150)
+      p.click('.sheet [data-action="close-sheet"]'); p.wait_for_timeout(150)
+      ok('홈에 선물까지 남은 보석', f'{30 - before_gems}개 남았어요' in p.locator('.home .gem-box').inner_text() and '아이스크림' in p.locator('.home .gem-box').inner_text(), p.locator('.home .gem-box').inner_text())
+      shot(p, '28-home-gems')
 
       # 하양이 기권: 까망이 돌만 판의 절반 넘게(위 다섯 줄) 있는 9줄 판(하양이는 계속 넘김) → 두 번 더 두면 하양이가 기권
       moves = []

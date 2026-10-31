@@ -72,3 +72,22 @@ export function gemRain(n: number): string {
     (_, i) => `<span style="--x:${((i * 37) % 100) - 50}px;--d:${i * 70}ms">${gemIcon(26, i)}</span>`,
   ).join('')}</div>`;
 }
+
+/** 보물상자(결과 화면에서 눌러 열기). open이면 뚜껑이 열리고 빛이 나온다 */
+export function treasureChest(size: number, open = false): string {
+  const lid = open
+    ? '<path d="M14 38 L22 14 H78 L86 38 Z" fill="#C8792E" transform="rotate(-18 14 38)"/><path d="M18 34 L24 18 H76 L82 34 Z" fill="#E0954A" transform="rotate(-18 14 38)"/>'
+    : '<path d="M12 44 Q12 22 30 20 H70 Q88 22 88 44 Z" fill="#C8792E"/><path d="M18 42 Q18 27 32 26 H68 Q82 27 82 42 Z" fill="#E0954A"/><rect x="44" y="20" width="12" height="24" fill="#F2C14E"/>';
+  const glow = open ? '<ellipse cx="50" cy="48" rx="30" ry="10" fill="#FFF3B0"/><path d="M30 46 L22 10 M50 44 V4 M70 46 L78 10" stroke="#FFE27A" stroke-width="5" stroke-linecap="round" opacity="0.8"/>' : '';
+  return `<svg class="chest ${open ? 'open' : ''}" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+<ellipse cx="50" cy="93" rx="36" ry="5" fill="#000" opacity="0.12"/>
+${glow}
+<rect x="12" y="44" width="76" height="44" rx="5" fill="#B4652A"/>
+<rect x="18" y="50" width="64" height="32" rx="3" fill="#D98A42"/>
+<rect x="12" y="58" width="76" height="6" fill="#8E4E1F" opacity="0.5"/>
+<rect x="44" y="44" width="12" height="44" fill="#F2C14E"/>
+<rect x="41" y="56" width="18" height="14" rx="3" fill="#F7D774" stroke="#B88A1E" stroke-width="2"/>
+<circle cx="50" cy="62" r="2.6" fill="#7A5310"/>
+${lid}
+</svg>`;
+}

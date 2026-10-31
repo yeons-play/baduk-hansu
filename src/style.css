@@ -447,3 +447,9 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .gem-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 6px 10px; border-radius: 999px; background: var(--card); border: 2px solid var(--line); }
 .gem-pill b { font-family: var(--title); font-weight: 400; font-size: 1.5rem; color: #2E8BD8; }
 .gem-tag { flex: none; white-space: nowrap; }
+.chest-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 6px auto 12px; padding: 8px 20px; background: none; border: none; font-family: var(--title); font-size: 1.3rem; color: #B4652A; }
+.chest-btn .chest { animation: chest-wiggle 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+@keyframes chest-wiggle { 0%, 60%, 100% { transform: rotate(0); } 68% { transform: rotate(-7deg); } 76% { transform: rotate(7deg); } 84% { transform: rotate(-4deg); } 92% { transform: rotate(3deg); } }
+.gem-get > .chest { flex: none; animation: pop 0.35s ease-out both; }
+.gem-tag .chest { display: block; }
+@media (prefers-reduced-motion: reduce) { .chest-btn .chest, .gem-get > .chest { animation: none; } }

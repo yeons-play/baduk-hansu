@@ -61,17 +61,49 @@ export function guessFinal(game: Game, me: Stone, opts: ResignOptions & { stopAf
  * 그런 땅을 가진 쪽을 너무 지고 있다고 보므로(13줄 실제 판에서 10집 안팎 차이를 59집으로 봄), 이 셈으로도 크게 질 때만 기권한다.
  */
 export function moyoMargin(game: Game, me: Stone): number {
+  const { black, white } = guessOwner(game);
+  return (black - white - game.rules.komi) * (me === BLACK ? 1 : -1);
+}
+
+/** moyoMargin의 땅 주인 짐작: 돌은 그 색, 빈 곳은 굳은 집이면 그 색, 아니면 세력 지도에서 한쪽이 확실히 센 곳만 */
+function guessOwner(game: Game): { owner: Uint8Array; black: number; white: number } {
   const infl = influence(game);
   const settled = settledOwner(game);
-  let b = 0;
-  let w = 0;
+  const owner = new Uint8Array(game.geo.n);
+  let black = 0;
+  let white = 0;
   for (let p = 0; p < game.geo.n; p++) {
     const c = game.at(p);
     const o = c !== EMPTY ? c : settled[p] ? settled[p] : infl[p] >= INFL_T ? BLACK : infl[p] <= -INFL_T ? WHITE : EMPTY;
-    if (o === BLACK) b++;
-    else if (o === WHITE) w++;
+    owner[p] = o;
+    if (o === BLACK) black++;
+    else if (o === WHITE) white++;
   }
-  return (b - w - game.rules.komi) * (me === BLACK ? 1 : -1);
+  return { owner, black, white };
+}
+
+export interface PeekScore {
+  /** 교차점별 짐작한 땅 주인(0 = 아직 모름) */
+  owner: Uint8Array;
+  /** 돌+집(죽은 돌은 빼고, 그 자리는 상대 땅으로) */
+  black: number;
+  white: number;
+  komi: number;
+  /** 흑 기준(덤 포함) */
+  margin: number;
+}
+
+/**
+ * 끝나지 않은 판(기권으로 끝난 판)을 '대충' 세어 보기. 규칙대로 세면 열린 곳이 모두 누구 땅도 아니게 되어 의미가 없으므로,
+ * 죽은 돌을 들어낸 판에서 moyoMargin과 같은 짐작으로 센다. 정확한 계가가 아니라 구경용 — 화면에도 그렇게 알린다.
+ */
+export function peekScore(game: Game, dead: number[]): PeekScore {
+  const board = game.board();
+  for (const p of dead) board[p] = EMPTY;
+  const g = new Game({ size: game.size, mode: 'normal', komi: game.rules.komi }, { board, toMove: game.toMove });
+  const { owner, black, white } = guessOwner(g);
+  const komi = game.rules.komi;
+  return { owner, black, white, komi, margin: black - white - komi };
 }
 
 /** 기권할 만큼 지고 있나: 판이 40% 넘게 찼고, 넓은 땅까지 쳐 줘도 판 넓이의 15% 넘게 지고, 두어 본 판에서도 25% 넘게·95% 이상 진다 */

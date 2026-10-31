@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BLACK, WHITE, Game } from '../src/engine/rules';
 import { chooseMove, type Level } from '../src/engine/ai/beginner';
 import { estimateDead } from '../src/engine/ai/dead';
-import { hopeless, moyoMargin } from '../src/engine/ai/resign';
+import { hopeless, moyoMargin, peekScore } from '../src/engine/ai/resign';
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -97,4 +97,46 @@ describe('하양이 기권', () => {
     }
     expect(resigned).toBeLessThanOrEqual(10);
   }, 60000);
+});
+
+describe('기권한 판 대충 세어 보기(구경용)', () => {
+  // 가운데 세로 벽: 왼쪽 네 줄은 까망이, 오른쪽 세 줄은 하양이. 하양이 땅 안에 까망이 죽은 돌 하나
+  const g = Game.fromDiagram(
+    [
+      '. . . . X O . . .',
+      '. . . . X O . . .',
+      '. . . . X O . . .',
+      '. . . . X O . X .',
+      '. . . . X O . . .',
+      '. . . . X O . . .',
+      '. . . . X O . . .',
+      '. . . . X O . . .',
+      '. . . . X O . . .',
+    ],
+    WHITE,
+    { mode: 'normal', komi: 7 },
+  );
+  const dead = [3 * 9 + 7];
+
+  it('죽은 돌을 빼고 그 자리는 상대 땅으로, 덤까지 더해 센다', () => {
+    const s = peekScore(g, dead);
+    expect(s.black).toBe(45);
+    expect(s.white).toBe(36);
+    expect(s.komi).toBe(7);
+    expect(s.margin).toBe(45 - 36 - 7);
+    expect(s.owner[3 * 9 + 7]).toBe(WHITE);
+  });
+
+  it('죽은 돌을 모르면 그 돌은 까망이로 센다(판 자체는 바꾸지 않음)', () => {
+    const s = peekScore(g, []);
+    expect(s.owner[3 * 9 + 7]).toBe(BLACK);
+    expect(g.at(3 * 9 + 7)).toBe(BLACK);
+  });
+
+  it('빈 판처럼 열린 곳은 누구 땅도 아니다(정확한 계가처럼 보이지 않게)', () => {
+    const open = Game.fromDiagram(Array.from({ length: 9 }, (_, y) => (y === 4 ? '. . . . X . . . .' : '. . . . . . . . .')), WHITE, { mode: 'normal', komi: 7 });
+    const s = peekScore(open, []);
+    expect(s.owner[0]).toBe(0);
+    expect(s.black + s.white).toBeLessThan(81);
+  });
 });

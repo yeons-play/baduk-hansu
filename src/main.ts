@@ -7,9 +7,9 @@ import { BLACK, EMPTY, WHITE, Game, opponent, type GameMode, type IllegalReason,
 import { chooseMove, type Level } from './engine/ai/beginner';
 import { hintText, planHint, type HintPlan, type HintStep } from './coach';
 import { estimateDead, countDead } from './engine/ai/dead';
-import { hopeless } from './engine/ai/resign';
+import { hopeless, peekScore, type PeekScore } from './engine/ai/resign';
 import { pointFromEvent, renderBoard } from './ui/board';
-import { type Mood, gemIcon, gemRain, starBurst, stoneFace } from './ui/faces';
+import { type Mood, gemIcon, gemRain, starBurst, stoneFace, treasureChest } from './ui/faces';
 import { GEM_RULES, gemsForGame, type GemAward } from './gems';
 import {
   clearGame,
@@ -80,7 +80,8 @@ type Sheet =
   | 'names'
   | 'resign-offer'
   | 'summary'
-  | 'gem-goal';
+  | 'gem-goal'
+  | 'peek';
 
 const ui = {
   /** 이름 바꾸기 화면에서 고치는 중인 이름(저장 전) */
@@ -145,6 +146,10 @@ const ui = {
   sceneGemGiven: 0,
   /** 방금 끝낸 연습에서 받은 보석 */
   practiceGems: 0,
+  /** 보물상자를 열었는지(결과 화면·연습 끝 화면, 새로 받을 때마다 닫힌 채로 시작) */
+  chestOpen: false,
+  /** 기권으로 끝난 판을 대충 세어 본 것(구경용) */
+  peek: null as { dead: number[]; s: PeekScore } | null,
   /** 보석 목표 정하기 화면에서 고치는 중인 값 */
   goalDraft: null as { count: number; gift: string } | null,
 };
@@ -498,8 +503,10 @@ function finishGame(delay = 0) {
   // 보석: 끝까지 두면 늘 받는다(그만하기만 빼고). 몇 개인지만 조금씩 다르다
   const quit = res.reason === 'resign' && outcome === 'loss';
   const gems = gemsForGame({ outcome, quit, mode: g.rules.mode, level: ui.level, good });
-  addGems(gems.total);
+  addGems(gems.total); // 상자를 안 열고 나가도 보석은 이미 들어가 있다
   ui.gems = gems;
+  ui.chestOpen = false;
+  ui.peek = null;
   // 보호자 요약용 한 줄 기록: 처음이면 남아 있는 다시 보기 기록으로 먼저 채운 뒤 이 판을 더한다
   ensureGameLog();
   const endedAt = new Date(id).toISOString();
@@ -547,8 +554,7 @@ function finishGame(delay = 0) {
   const show = () => {
     ui.sheet = 'result';
     if (ui.result.win) window.setTimeout(() => sfx('win'), 250);
-    if (gems.total) window.setTimeout(() => sfx('gem'), ui.result.win ? 750 : 300);
-    speak(`${ui.result.title} ${ui.result.body} ${ui.praise} ${gems.total ? `보석 ${gems.total}개 받았어요!` : ''}`);
+    speak(`${ui.result.title} ${ui.result.body} ${ui.praise} ${gems.total ? '보물상자를 받았어요! 눌러서 열어 봐요.' : ''}`);
     render();
   };
   window.clearTimeout(resultTimer);
@@ -689,7 +695,21 @@ function gemResultHTML(): string {
   if (!g) return '';
   if (!g.total) return '<p class="sheet-p small center">끝까지 두면 보석을 받아요!</p>';
   const why = g.bonus ? `끝까지 둬서 ${g.base}개 + 잘한 수 ${g.bonus}개` : '끝까지 둬서 받았어요';
-  return `<div class="gem-get ${ui.result.win ? 'big' : ''}">${gemRain(g.total)}${gemIcon(ui.result.win ? 56 : 44, ui.lastFinishedId)}<b>보석 +${g.total}</b><span>${why}</span></div>`;
+  return chestHTML(g.total, why, ui.result.win, ui.lastFinishedId);
+}
+
+/** 하양이 기권으로 이긴 진짜 바둑이면 결과 화면에서 대충 세어 볼 수 있다 */
+function peekAvailable(): boolean {
+  const r = ui.game?.result;
+  return !!ui.game && ui.game.rules.mode === 'normal' && r?.reason === 'resign' && 'winner' in r && r.winner === HUMAN;
+}
+
+/** 닫힌 보물상자(누르면 열림) → 열린 상자와 보석 개수 */
+function chestHTML(n: number, why: string, big: boolean, hue: number): string {
+  if (!ui.chestOpen) {
+    return `<button class="chest-btn" data-action="chest-open" aria-label="보물상자 열기">${treasureChest(big ? 110 : 92)}<span>보물상자를 눌러 봐요!</span></button>`;
+  }
+  return `<div class="gem-get ${big ? 'big' : ''}">${gemRain(n)}${treasureChest(64, true)}${gemIcon(big ? 56 : 44, hue)}<b>보석 +${n}</b><span>${why}</span></div>`;
 }
 
 /** 홈: 모은 보석과 선물 목표 */
@@ -1158,10 +1178,29 @@ function sheetHTML(): string {
     body = `<div class="result-face">${stoneFace('white', 110, 'oops')}</div>
     <h2 class="result-title">하양이가 인사했어요</h2>
     <p class="sheet-p center">${rich('하양이가 “제가 졌어요” 하고 고개를 숙였어요(기권). 바둑에서는 많이 지고 있으면 이렇게 인사하고 끝내요.')}</p>
-    <p class="sheet-p center small">받으면 까망이가 이겨요. 더 두고 싶으면 끝까지 두고 집을 세어도 돼요.</p>
-    <div class="row2"><button class="btn ghost" data-action="resign-decline">더 둘래요</button><button class="btn primary" data-action="resign-accept">받을래요!</button></div>`;
+    <p class="sheet-p center small">받으면 까망이가 이겨요. 집을 정확히 세어 보고 싶으면 끝까지 두어요.</p>
+    <button class="btn primary full big" data-action="resign-accept">받을래요!</button>
+    <button class="btn ghost full" data-action="resign-decline">끝까지 두고 세어 볼래요</button>`;
   } else if (ui.sheet === 'names') {
     body = namesSheetHTML();
+  } else if (ui.sheet === 'peek' && ui.game && ui.peek) {
+    const g = ui.game;
+    const s = ui.peek.s;
+    const lead = Math.abs(s.margin);
+    const verdict = s.margin > 0 ? `까망이가 ${lead}점쯤 앞서 있었어요` : s.margin < 0 ? `하양이가 ${lead}점쯤 앞서 있었어요` : '거의 똑같았어요';
+    body = `<h2>대충 세어 봐요</h2>
+    <div class="rules-board">${renderBoard(g, { owner: s.owner, dead: ui.peek.dead })}</div>
+    <p class="sheet-p small center">흐린 돌은 죽은 돌(사석)로 보고 뺐어요. 네모가 없는 곳은 아직 누구 집인지 몰라요.</p>
+    <table class="score-table">
+      <thead><tr><th></th><th>돌+집</th><th>덤</th><th>합계</th></tr></thead>
+      <tbody>
+        <tr><th>까망이</th><td>${s.black}</td><td>-</td><td><b>${s.black}</b></td></tr>
+        <tr><th>하양이</th><td>${s.white}</td><td>${s.komi}</td><td><b>${s.white + s.komi}</b></td></tr>
+      </tbody>
+    </table>
+    <p class="sheet-p center"><b>${verdict}</b></p>
+    <p class="sheet-p small center">${rich('끝까지 둔 판이 아니라서 짐작이에요. 진짜 바둑에서는 기권하면 세지 않아요. 정확히 세고 싶으면 다음엔 ‘끝까지 두고 세어 볼래요’를 눌러요.')}</p>
+    <button class="btn primary full big" data-action="peek-close">결과로 돌아가기</button>`;
   } else if (ui.sheet === 'gem-goal') {
     body = gemGoalSheetHTML();
   } else if (ui.sheet === 'summary') {
@@ -1195,7 +1234,7 @@ function sheetHTML(): string {
     body = `<div class="result-face">${starBurst()}${stoneFace('black', 120, 'wow')}</div>
     <h2 class="result-title">${l.steps.length}문제 다 풀었어요!</h2>
     <p class="sheet-p center">${rich(`**${l.title}(${l.term})** 연습 끝. 정말 잘했어요!`)}</p>
-    ${ui.practiceGems ? `<div class="gem-get">${gemRain(ui.practiceGems)}${gemIcon(44, 2)}<b>보석 +${ui.practiceGems}</b><span>놓친 장면을 다시 풀었어요!</span></div>` : ''}
+    ${ui.practiceGems ? chestHTML(ui.practiceGems, '놓친 장면을 다시 풀었어요!', false, 2) : ''}
     <div class="row2"><button class="btn ghost" data-action="tab" data-tab="puzzle">목록으로</button>${more}</div>`;
   } else if (ui.sheet === 'key' && ui.keyCard) {
     const c = ui.keyCard;
@@ -1212,7 +1251,8 @@ function sheetHTML(): string {
     <h2 class="result-title">${esc(r.title)}</h2><p class="sheet-p center">${esc(r.body)}</p>
     ${ui.praise ? `<div class="feedback ok praise">${icon('check')}<span>${rich(ui.praise)}</span></div>` : ''}
     ${gemResultHTML()}
-    ${ui.lastScenes.length ? `<button class="btn ghost full" data-action="scene-retry">${icon('grid')}놓친 장면 다시 풀어 볼까요?${ui.sceneGemGiven !== ui.lastFinishedId ? `<span class="gem-tag">${gemIcon(22, 2)}+${GEM_RULES.sceneRetry}</span>` : ''}</button>` : ''}
+    ${peekAvailable() ? `<button class="btn ghost full" data-action="peek-open">${icon('house')}집 세어 보기(구경)</button>` : ''}
+    ${ui.lastScenes.length ? `<button class="btn ghost full" data-action="scene-retry">${icon('grid')}놓친 장면 다시 풀어 볼까요?${ui.sceneGemGiven !== ui.lastFinishedId ? `<span class="gem-tag">${treasureChest(30)}</span>` : ''}</button>` : ''}
     <div class="row2"><button class="btn ghost" data-action="go-home">홈으로</button><button class="btn primary" data-action="again">한 판 더!</button></div>
     ${ui.lastFinishedId ? `<button class="btn text full" data-action="review-open" data-id="${ui.lastFinishedId}">${icon('undo')}둔 수 다시 보기(복습)</button>` : ''}`;
   }
@@ -1337,11 +1377,11 @@ app.addEventListener('click', (ev) => {
           ui.sceneGemGiven = ui.sceneGemFor;
           ui.practiceGems = GEM_RULES.sceneRetry;
           addGems(ui.practiceGems);
-          window.setTimeout(() => sfx('gem'), 700);
+          ui.chestOpen = false;
         }
         ui.sceneGemFor = 0;
         ui.sheet = 'practice-done';
-        speak(`${lp.lesson.steps.length}문제 다 풀었어요! 정말 잘했어요!${ui.practiceGems ? ` 보석 ${ui.practiceGems}개 받았어요!` : ''}`);
+        speak(`${lp.lesson.steps.length}문제 다 풀었어요! 정말 잘했어요!${ui.practiceGems ? ' 보물상자를 받았어요! 눌러서 열어 봐요.' : ''}`);
       } else {
         markLessonDone(lp.lesson.id);
         ui.sheet = 'lesson-done';
@@ -1382,6 +1422,30 @@ app.addEventListener('click', (ev) => {
       ui.nameDraft = null;
       ui.parentOpen = false; // 설정을 새로 열면 '보호자용'은 접힌 채로
       ui.sheet = 'settings';
+      break;
+    case 'chest-open':
+      if (ui.chestOpen) break;
+      ui.chestOpen = true;
+      sfx('gem');
+      {
+        const n = ui.sheet === 'practice-done' ? ui.practiceGems : (ui.gems?.total ?? 0);
+        if (n) speak(`와! 보석 ${n}개!`);
+      }
+      break;
+    case 'peek-open': {
+      const g = ui.game;
+      if (!g || !peekAvailable()) break;
+      if (!ui.peek) {
+        const dead = estimateDead(g);
+        ui.peek = { dead, s: peekScore(g, dead) };
+      }
+      ui.sheet = 'peek';
+      const s = ui.peek.s;
+      speak(`대충 세면 까망이 ${s.black}점, 하양이는 덤까지 ${s.white + s.komi}점이에요. 끝까지 둔 판이 아니라서 짐작이에요.`);
+      break;
+    }
+    case 'peek-close':
+      ui.sheet = 'result';
       break;
     case 'gem-goal-open':
       ui.goalDraft = null;

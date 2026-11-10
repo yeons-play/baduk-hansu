@@ -24,6 +24,18 @@ export interface BoardView {
   ghostAge?: number;
   /** 반짝이는 네모 구역 [x0, y0, x1, y1](도와줘 2단계 '어디쯤') */
   zone?: [number, number, number, number] | null;
+  /**
+   * 집 세기 연출: 그 점의 집 네모가 켜질 때까지 남은 시간(ms, 이미 켜졌으면 음수).
+   * 주면 네모가 차례로 '뿅' 나타난다. 다시 그려도 이어서 보이게 남은 시간을 그때그때 받는다
+   */
+  ownerDelay?: (p: number) => number | null;
+  /** 집 세기 연출: 그 돌을 셀 때까지 남은 시간(ms). 주면 세는 차례에 돌이 살짝 커졌다 돌아온다 */
+  stoneDelay?: (p: number) => number | null;
+}
+
+/** 연출 시작까지 남은 시간 → 움직임을 그때 시작하게 하는 style (지났으면 음수라서 이어서 보임) */
+function delayStyle(ms: number | null | undefined): string {
+  return ms == null ? '' : ` style="animation-delay:${Math.round(ms)}ms"`;
 }
 
 const VB = 400;
@@ -70,7 +82,8 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
       const fill = view.owner[p] === BLACK ? '#1b1916' : '#f7f3ea';
       const stroke = view.owner[p] === BLACK ? 'none' : '#8a7a5c';
       const h = Math.max(6, st * 0.14); // 판이 작을수록 네모도 크게
-      terr += `<rect x="${(coord(size, x) - h).toFixed(1)}" y="${(coord(size, y) - h).toFixed(1)}" width="${(2 * h).toFixed(1)}" height="${(2 * h).toFixed(1)}" rx="2" fill="${fill}" stroke="${stroke}" opacity="0.85"/>`;
+      const wait = view.ownerDelay?.(p);
+      terr += `<rect${wait == null ? '' : ' class="terr-pop"'}${delayStyle(wait)} x="${(coord(size, x) - h).toFixed(1)}" y="${(coord(size, y) - h).toFixed(1)}" width="${(2 * h).toFixed(1)}" height="${(2 * h).toFixed(1)}" rx="2" fill="${fill}" stroke="${stroke}" opacity="0.85"/>`;
     }
   }
 
@@ -90,7 +103,8 @@ export function renderBoard(game: Game, view: BoardView = {}): string {
       continue;
     }
     stones += `<circle cx="${(cx + 1.6).toFixed(1)}" cy="${(cy + 2.4).toFixed(1)}" r="${(r - 0.5).toFixed(1)}" fill="#000" opacity="0.28" filter="url(#soft)"/>`;
-    stones += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${v === BLACK ? 'gb' : 'gw'})"/>`;
+    const told = view.stoneDelay?.(p);
+    stones += `<circle${told == null ? '' : ' class="count-pulse"'}${delayStyle(told)} cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${v === BLACK ? 'gb' : 'gw'})"/>`;
   }
 
   for (const { p, c: color } of view.ghosts ?? []) {

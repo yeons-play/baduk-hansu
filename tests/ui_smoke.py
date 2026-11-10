@@ -406,6 +406,10 @@ with sync_playwright() as pw:
       p.click('[data-action="ask-pass"]'); p.wait_for_timeout(150)
       p.click('[data-action="pass"]'); p.wait_for_timeout(1200)
       ok('둘 다 넘기면 집 세기 화면', p.locator('.score-table').count() == 1)
+      # 집 세기 연출: 처음에는 숫자가 다 나오지 않고, 차례로 센 뒤 발표
+      ok('집 세기 연출: 처음부터 다 센 숫자가 나오지 않음', p.locator('.score-verdict.on').count() == 0)
+      p.wait_for_selector('.score-verdict.on', timeout=10000); p.wait_for_timeout(200)
+      ok('집 세기 연출: 다 세면 누가 이겼는지 발표', '이겼어요' in p.locator('.score-verdict').inner_text())
       ok('집 세기: 까망이 36점, 하양이 52점(덤 7)', '36' in p.locator('.score-table').inner_text() and '52' in p.locator('.score-table').inner_text(), p.locator('.score-table').inner_text() if p.locator('.score-table').count() else '')
       shot(p, '19-score')
       ok('집 세기: 죽은 돌 없음 안내', '죽은 돌(사석)이 없어요' in p.locator('.sheet').inner_text())

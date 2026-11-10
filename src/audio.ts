@@ -2,7 +2,7 @@
 // 아이패드·아이폰은 첫 터치 이후에만 소리가 나므로 unlockAudio()를 첫 터치 때 부른다.
 import { loadSettings } from './storage';
 
-export type Sfx = 'stone' | 'capture' | 'correct' | 'wrong' | 'win' | 'gem';
+export type Sfx = 'stone' | 'capture' | 'correct' | 'wrong' | 'win' | 'gem' | 'tick' | 'plus' | 'tada' | 'soft';
 
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
@@ -36,12 +36,26 @@ export function unlockAudio(): void {
   o.stop(c.currentTime + 0.01);
 }
 
-export function sfx(name: Sfx): void {
+/** pitch는 'tick'의 높이(1 = 돌 세기, 높을수록 맑은 소리 — 집 세기) */
+export function sfx(name: Sfx, pitch = 1): void {
   if (!loadSettings().sound) return;
   const c = ac();
   if (!c) return;
   const t = c.currentTime + 0.005;
-  if (name === 'stone') clack(c, t, 1);
+  if (name === 'tick') {
+    // 집 세기 연출: 숫자가 오를 때마다 아주 짧고 작게(1초에 스무 번까지 나므로)
+    tone(c, t, 880 * pitch, 0.045, 0.05, 'triangle');
+  } else if (name === 'plus') {
+    // 덤 한 점: 맑게 '띵'
+    tone(c, t, 1568, 0.14, 0.09, 'sine');
+  } else if (name === 'tada') {
+    // 집 세기 발표(까망이가 이김): 짧은 '짜잔' — 결과 창의 긴 축하 소리(win)와 겹치지 않게 두 음만
+    tone(c, t, 784, 0.16, 0.13, 'triangle');
+    tone(c, t + 0.12, 1175, 0.32, 0.14, 'triangle');
+  } else if (name === 'soft') {
+    // 집 세기 발표(졌거나 비김): 놀리는 소리 없이 낮고 부드럽게 한 번
+    tone(c, t, 440, 0.28, 0.08, 'sine');
+  } else if (name === 'stone') clack(c, t, 1);
   else if (name === 'capture') {
     clack(c, t, 1);
     [0.12, 0.2, 0.28].forEach((dt, i) => tone(c, t + dt, 900 + i * 260, 0.09, 0.12, 'triangle'));

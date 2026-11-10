@@ -3,7 +3,7 @@ import '@fontsource/jua/latin-400.css';
 import '@fontsource/gowun-dodum/korean-400.css';
 import '@fontsource/gowun-dodum/latin-400.css';
 import './style.css';
-import { BLACK, EMPTY, WHITE, Game, opponent, type GameMode, type IllegalReason, type Stone } from './engine/rules';
+import { BLACK, EMPTY, WHITE, Game, opponent, type AreaScore, type GameMode, type IllegalReason, type Stone } from './engine/rules';
 import { chooseMove, type Level } from './engine/ai/beginner';
 import { hintText, planHint, type HintPlan, type HintStep } from './coach';
 import { estimateDead, countDead } from './engine/ai/dead';
@@ -41,9 +41,12 @@ import {
   addGems,
   setGemGoal,
   spendGemGoal,
+  loadStartPrefs,
+  saveStartPrefs,
   type GameSetup,
   type SavedScene,
 } from './storage';
+import { frameAt, planShow, showInputOf, type ShowFrame, type ShowInput, type ShowPlan } from './scoreshow';
 import { ensureGameLog, logPractice, summarize } from './records';
 import { summaryHTML } from './summary';
 import { LEVELS } from './levels';
@@ -83,20 +86,36 @@ type Sheet =
   | 'gem-goal'
   | 'peek';
 
+/** 집 세기 연출이 도는 동안의 상태(시간표는 src/scoreshow.ts) */
+interface ScoreShow {
+  startedAt: number;
+  input: ShowInput;
+  plan: ShowPlan;
+  /** 발표(읽어 주기·소리)를 했는지 */
+  told: boolean;
+  /** 소리를 낸 데까지: 센 돌+집 수, 더한 덤, 마지막 '틱' 시각 */
+  heard: number;
+  komiHeard: number;
+  tickAt: number;
+}
+
+// 지난번에 시작 시트에서 고른 판 크기·하양이 실력(앱을 닫았다 열어도 그대로)
+const START = loadStartPrefs();
+
 const ui = {
   /** 이름 바꾸기 화면에서 고치는 중인 이름(저장 전) */
   nameDraft: null as Names | null,
   screen: 'home' as Screen,
   sheet: null as Sheet,
-  level: 1 as Level,
+  level: START.level as Level,
   /** 따내기 바둑에서 먼저 잡아야 하는 돌 수 */
-  target: 1 as Target,
+  target: START.target as Target,
   /** 고르는 중인 놀이: 따내기 바둑(capture) 또는 집 짓는 진짜 바둑(normal) */
   mode: 'capture' as GameMode,
   /** 따내기 바둑 판 크기 */
-  size: 7 as BoardSize,
+  size: START.size as BoardSize,
   /** 진짜 바둑 판 크기 */
-  normalSize: 9 as NormalSize,
+  normalSize: START.normalSize as NormalSize,
   game: null as Game | null,
   preview: null as number | null,
   hint: null as number | null,
@@ -152,6 +171,10 @@ const ui = {
   peek: null as { dead: number[]; s: PeekScore } | null,
   /** 보석 목표 정하기 화면에서 고치는 중인 값 */
   goalDraft: null as { count: number; gift: string } | null,
+  /** 집 세기 연출(둘 다 넘긴 직후 한 번). null이면 다 센 모습을 바로 보여 준다 */
+  scoreShow: null as ScoreShow | null,
+  /** 까망이가 방금 하양이 돌을 잡은 때 — 잠깐 까망이는 신난 얼굴, 하양이는 '앗!' 얼굴(0 = 없음) */
+  cheerAt: 0,
 };
 
 const HUMAN = BLACK;
@@ -160,10 +183,16 @@ const AI_DELAY = 550;
 const GHOST_MS = 550;
 /** 따내기 바둑이 잡기로 끝나면 돌이 사라지는 것을 본 뒤 결과 창 */
 const END_DELAY_MS = 900;
+/** 돌을 잡은 뒤 얼굴이 반응하는 시간 */
+const CHEER_MS = 1500;
+/** 집 세기 연출에서 '틱' 소리 사이 가장 짧은 틈(너무 다닥다닥 나지 않게) */
+const TICK_GAP_MS = 45;
 let aiTimer: number | undefined;
 let toastTimer: number | undefined;
 let ghostTimer: number | undefined;
 let resultTimer: number | undefined;
+let cheerTimer: number | undefined;
+let scoreRaf: number | undefined;
 
 const app = document.getElementById('app')!;
 
@@ -196,12 +225,15 @@ function newGame(level: Level, target: Target) {
   ui.setup = null;
   ui.level = level;
   ui.target = target;
+  saveStartPrefs({ level, size: ui.size, normalSize: ui.normalSize, target });
   ui.hopelessStreak = 0;
   ui.resignDeclined = false;
   ui.hints = 0;
   ui.undos = 0;
   ui.hintsFull = 0;
   clearGhosts();
+  clearCheer();
+  stopScoreShow();
   window.clearTimeout(resultTimer);
   resetMarks();
   persist();
@@ -240,6 +272,8 @@ function resumeGame(): boolean {
   ui.undos = typeof saved.undos === 'number' ? saved.undos : 0;
   ui.hintsFull = typeof saved.hintsFull === 'number' ? saved.hintsFull : 0;
   clearGhosts();
+  clearCheer();
+  stopScoreShow();
   window.clearTimeout(resultTimer);
   ui.level = saved.level;
   ui.mode = saved.mode;
@@ -310,6 +344,26 @@ function clearGhosts() {
   window.clearTimeout(ghostTimer);
 }
 
+/**
+ * 까망이가 돌을 잡았을 때의 얼굴 반응: 잠깐 까망이는 신난 얼굴, 하양이는 '앗!' 얼굴.
+ * 이미 일어난 일에만 반응한다 — 잡을 수 있다·위험하다고 미리 알려 주는 얼굴은 넣지 않는다(HANDOFF 6절 2026-10-28).
+ * 하양이가 잡았을 때는 반응하지 않는다(놀리는 것처럼 보이지 않게).
+ */
+function cheer() {
+  ui.cheerAt = Date.now();
+  window.clearTimeout(cheerTimer);
+  cheerTimer = window.setTimeout(() => {
+    ui.cheerAt = 0;
+    // 결과 창이 떠 있으면 다시 그리지 않는다(창의 별·상자 움직임이 처음부터 다시 시작함)
+    if (ui.screen === 'game' && !ui.sheet) render();
+  }, CHEER_MS);
+}
+
+function clearCheer() {
+  ui.cheerAt = 0;
+  window.clearTimeout(cheerTimer);
+}
+
 function lastMovePoint(g: Game): number | null {
   const m = g.moves[g.moves.length - 1];
   return m && m.type === 'play' ? m.point : null;
@@ -327,6 +381,7 @@ function confirmMove() {
   }
   sfx(r.captured.length ? 'capture' : 'stone');
   showGhosts(r.captured, HUMAN);
+  if (r.captured.length) cheer();
   resetMarks();
   persist();
   // 따내기 바둑을 잡기로 이기면 잡힌 돌을 잠깐 보여 준 뒤 결과 창
@@ -393,15 +448,108 @@ function endOrScore(savedDead?: number[]) {
     const r = g.settle(ui.dead);
     persist();
     const s = r && r.reason === 'score' ? r.score : g.result.score;
-    speak(
-      `까망이는 ${s.blackTotal}점, 하양이는 덤까지 ${s.whiteTotal}점이에요. ${
-        s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요.' : '똑같아요!'
-      }`,
-    );
+    // 방금 둘 다 넘겼으면 숫자를 한 번에 띄우지 않고 돌 → 집 → 덤 차례로 센 뒤 발표한다.
+    // 앱을 닫았다 다시 연 판(저장해 둔 죽은 돌이 있음)과 움직임을 줄인 기기에서는 다 센 모습을 바로 보여 준다
+    if (!savedDead && motionOK()) startScoreShow(g, s);
+    else {
+      stopScoreShow();
+      speak(scoreSpeech(s));
+    }
     render();
     return;
   }
   finishGame();
+}
+
+/** 집 세기 결과를 읽어 주는 말 */
+function scoreSpeech(s: AreaScore): string {
+  return `까망이는 ${s.blackTotal}점, 하양이는 덤까지 ${s.whiteTotal}점이에요. ${
+    s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요.' : '똑같아요!'
+  }`;
+}
+
+/** 기기에서 '동작 줄이기'를 켜 두었으면 false */
+function motionOK(): boolean {
+  try {
+    return !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return true;
+  }
+}
+
+// ───────── 집 세기 연출 ─────────
+// 시간표와 숫자는 src/scoreshow.ts가 '지난 시간'만으로 정한다. 여기서는 그 숫자를 표에 적고 소리를 낸다.
+// 연출 중에 화면을 다시 그려도(render) 같은 시간표로 그리므로 이어서 보인다.
+
+function startScoreShow(g: Game, s: AreaScore) {
+  stopScoreShow();
+  const input = showInputOf(g, ui.dead, s);
+  ui.scoreShow = { startedAt: Date.now(), input, plan: planShow(input), told: false, heard: 0, komiHeard: 0, tickAt: 0 };
+  speak('집을 세어 봐요!');
+  scoreRaf = window.requestAnimationFrame(scoreShowTick);
+}
+
+function stopScoreShow() {
+  ui.scoreShow = null;
+  if (scoreRaf != null) window.cancelAnimationFrame(scoreRaf);
+  scoreRaf = undefined;
+}
+
+/** 연출 한 장면: 지금 숫자를 표에 적고, 숫자가 오르면 소리를 낸다. 발표 때 한 번 읽어 준다 */
+function scoreShowTick() {
+  scoreRaf = undefined;
+  const sh = ui.scoreShow;
+  const res = ui.game?.result;
+  if (!sh || ui.sheet !== 'score' || res?.reason !== 'score') return stopScoreShow();
+  const now = Date.now();
+  const f = frameAt(sh.plan, sh.input, now - sh.startedAt);
+  paintScoreFrame(f);
+  const counted = f.blackStones + f.whiteStones + f.blackArea + f.whiteArea;
+  if (counted > sh.heard && now - sh.tickAt >= TICK_GAP_MS && !f.revealed) {
+    sfx('tick', f.phase >= 2 ? 1.5 : 1);
+    sh.tickAt = now;
+  }
+  sh.heard = counted;
+  if (f.komi > sh.komiHeard && !f.revealed) sfx('plus');
+  sh.komiHeard = f.komi;
+  if (f.revealed && !sh.told) {
+    sh.told = true;
+    sfx(res.score.margin > 0 ? 'tada' : 'soft');
+    speak(scoreSpeech(res.score));
+    app.querySelector('.sheet')?.classList.add('fresh'); // 발표하는 순간에만 '뿅'(다시 그릴 때는 없음)
+  }
+  if (f.done) return stopScoreShow(); // 화면은 다 센 모습 그대로 둔다
+  scoreRaf = window.requestAnimationFrame(scoreShowTick);
+}
+
+/** 연출 중에 화면을 누르면 바로 발표로 넘어간다 */
+function skipScoreShow() {
+  const sh = ui.scoreShow;
+  if (!sh) return;
+  sh.startedAt = Date.now() - sh.plan.revealAt;
+  render(); // 집 네모를 모두 켠 모습으로 다시 그린다(발표는 다음 장면에서)
+}
+
+/** 표에 적을 글자. f가 없으면 다 센 숫자 */
+function scoreCells(s: AreaScore, f: ShowFrame | null): Record<'bs' | 'ba' | 'bt' | 'ws' | 'wa' | 'k' | 'wt', string> {
+  const n = f
+    ? { bs: f.blackStones, ba: f.blackArea, bt: f.blackTotal, ws: f.whiteStones, wa: f.whiteArea, k: f.komiShown ? f.komi : null, wt: f.whiteTotal }
+    : { bs: s.blackStones, ba: s.blackArea, bt: s.blackTotal, ws: s.whiteStones, wa: s.whiteArea, k: s.komi, wt: s.whiteTotal };
+  return { bs: `${n.bs}`, ba: `${n.ba}`, bt: `${n.bt}`, ws: `${n.ws}`, wa: `${n.wa}`, k: n.k == null ? '' : `${n.k}`, wt: `${n.wt}` };
+}
+
+/** 연출 중에는 화면 전체를 다시 그리지 않고 표의 숫자·단계만 바꾼다 */
+function paintScoreFrame(f: ShowFrame) {
+  const res = ui.game?.result;
+  const table = app.querySelector<HTMLElement>('.sheet .score-table.live');
+  if (!table || res?.reason !== 'score') return;
+  const cells = scoreCells(res.score, f);
+  table.querySelectorAll<HTMLElement>('[data-sc]').forEach((el) => {
+    const v = cells[el.dataset.sc as keyof typeof cells] ?? '';
+    if (el.textContent !== v) el.textContent = v;
+  });
+  if (table.dataset.phase !== String(f.phase)) table.dataset.phase = String(f.phase);
+  app.querySelector('.sheet .score-verdict')?.classList.toggle('on', f.revealed);
 }
 
 /** 집 세기 화면에서 돌을 누르면 그 무리를 죽은 돌 ↔ 산 돌로 바꾼다 */
@@ -410,6 +558,7 @@ function toggleDead(p: number | null) {
   if (!g || p == null || g.at(p) === EMPTY) return;
   const grp = g.group(p).stones;
   const isDead = ui.dead.includes(p);
+  stopScoreShow(); // 고친 뒤에는 다 센 숫자를 바로 보여 준다
   ui.dead = isDead ? ui.dead.filter((q) => !grp.includes(q)) : [...ui.dead, ...grp];
   g.settle(ui.dead);
   persist();
@@ -424,6 +573,7 @@ function resumeAfterScore() {
   do {
     g.undo();
   } while (g.moves.length && g.toMove !== HUMAN);
+  stopScoreShow();
   ui.sheet = null;
   ui.dead = [];
   resetMarks();
@@ -445,6 +595,7 @@ function historySummary(g: Game): string {
 function finishGame(delay = 0) {
   const g = ui.game!;
   const res = g.result!;
+  stopScoreShow();
   let outcome: 'win' | 'loss' | 'draw' = 'draw';
   if ('winner' in res && res.winner === HUMAN) outcome = 'win';
   else if ('winner' in res && res.winner) outcome = 'loss';
@@ -587,6 +738,7 @@ function undoTurn() {
   ui.hopelessStreak = 0;
   ui.undos++;
   clearGhosts();
+  clearCheer();
   resetMarks();
   persist();
   render();
@@ -658,6 +810,25 @@ function render() {
       sheetHTML() +
       (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''),
   );
+  if (ui.screen === 'lesson') fitLesson();
+}
+
+/**
+ * 세로 화면 강의: 고르기 보기·알림 글이 붙으면 '다음' 버튼이 화면 아래로 밀릴 수 있다(10.2인치 아이패드에서 최대 180px).
+ * 그린 뒤 버튼이 화면 밖이면 그만큼 바둑판을 줄인다. 기기·글꼴마다 높이가 달라서 CSS 숫자 대신 실제로 재서 맞춘다
+ */
+function fitLesson() {
+  const wrap = app.querySelector<HTMLElement>('.lesson-screen .board-wrap');
+  const next = app.querySelector<HTMLElement>('.lesson-screen .next');
+  if (!wrap || !next) return;
+  wrap.style.width = ''; // 화면을 돌렸을 때를 위해 CSS 크기에서 다시 잰다
+  // 가로 화면은 바둑판이 옆에 있어 늘 들어간다
+  if (window.matchMedia?.('(orientation: landscape) and (min-width: 900px)').matches) return;
+  const over = next.getBoundingClientRect().bottom + 12 - window.innerHeight;
+  if (over <= 0) return;
+  const w = wrap.getBoundingClientRect().width;
+  // 너무 작아지지 않게(5·7줄 판은 260px이면 충분히 누를 수 있음)
+  wrap.style.width = `${Math.max(260, Math.floor(w - over))}px`;
 }
 
 function screenHTML(): string {
@@ -838,6 +1009,16 @@ function gameHTML(): string {
         }</div>`;
   const plan = ui.hintPlan;
   const step2 = ui.hintStep === 2 && plan;
+  // 까망이가 방금 돌을 잡았으면 잠깐 얼굴이 반응한다(다시 그려도 움직임이 이어지게 지난 시간을 넘김)
+  const cheerAge = ui.cheerAt ? Date.now() - ui.cheerAt : -1;
+  const cheering = cheerAge >= 0 && cheerAge < CHEER_MS;
+  const react = cheering ? ` style="--react:-${cheerAge}ms"` : '';
+  // 진짜 바둑은 집으로 이기므로 잡은 돌 수를 작게 보여 준다(큰 숫자는 점수처럼 보여 잡기만 하게 됨)
+  const normal = g.rules.mode === 'normal';
+  const caught = (c: Stone) =>
+    normal
+      ? `<span class="pcount small" aria-label="잡은 돌 ${g.captures(c)}개"><span class="pcount-lbl">잡은 돌 </span><b>${g.captures(c)}</b></span>`
+      : `<span class="pcount" aria-label="잡은 돌">${g.captures(c)}</span>`;
   return `<main class="screen game">
   <header class="bar">
     <button class="back" data-action="exit-game">${icon('chev')}나가기</button>
@@ -859,20 +1040,20 @@ function gameHTML(): string {
     </div>
     <div class="side">
       <div class="players">
-        <div class="player me ${g.toMove === BLACK ? 'turn' : ''}">
-          ${stoneFace('black', 56, g.toMove === BLACK ? 'happy' : 'think')}
-          <span class="pname"><b>나 · 까망이</b><small>${g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
-          <span class="pcount" aria-label="잡은 돌">${g.captures(BLACK)}</span>
+        <div class="player me ${g.toMove === BLACK ? 'turn' : ''} ${cheering ? 'yay' : ''}"${react}>
+          ${stoneFace('black', 56, cheering ? 'yay' : g.toMove === BLACK ? 'happy' : 'think')}
+          <span class="pname"><b>나 · 까망이</b><small>${cheering ? '잡았다!' : g.toMove === BLACK ? '내 차례!' : '기다려요'}</small></span>
+          ${caught(BLACK)}
         </div>
-        <div class="player ${g.toMove === WHITE ? 'turn' : ''}">
-          ${stoneFace('white', 56, g.toMove === WHITE ? 'think' : 'happy')}
-          <span class="pname"><b>하양이</b><small>${g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
-          <span class="pcount" aria-label="잡은 돌">${g.captures(WHITE)}</span>
+        <div class="player ${g.toMove === WHITE ? 'turn' : ''} ${cheering ? 'oops' : ''}"${react}>
+          ${stoneFace('white', 56, cheering ? 'wow' : g.toMove === WHITE ? 'think' : 'happy')}
+          <span class="pname"><b>하양이</b><small>${cheering ? '앗!' : g.toMove === WHITE ? '생각 중' : '기다려요'}</small></span>
+          ${caught(WHITE)}
         </div>
       </div>
       ${
-        g.rules.mode === 'normal'
-          ? `<p class="goal">집을 더 많이 지으면 이겨요 · 하양이는 <b>덤 ${g.rules.komi}점</b> · 숫자는 잡은 돌</p>`
+        normal
+          ? `<p class="goal">집을 더 많이 지으면 이겨요 · 하양이는 <b>덤 ${g.rules.komi}점</b><span class="goal-cap"> · 숫자는 잡은 돌</span></p>`
           : `<p class="goal">먼저 돌 <b>${g.rules.captureTarget}개</b>를 잡으면 이겨요 · 숫자는 잡은 돌</p>`
       }
       ${status}
@@ -1109,21 +1290,35 @@ function sheetHTML(): string {
     const s = ui.game.result.score;
     const verdict = s.margin > 0 ? '까망이가 이겼어요!' : s.margin < 0 ? '하양이가 이겼어요' : '똑같아요! 비겼어요';
     const dc = countDead(g, ui.dead);
+    // 연출 중이면 지금 시간의 숫자로 그린다(다시 그려도 이어서 보임). 연출이 없으면 다 센 모습
+    const sh = ui.scoreShow;
+    const t = sh ? Date.now() - sh.startedAt : 0;
+    const f = sh ? frameAt(sh.plan, sh.input, t) : null;
+    const c = scoreCells(s, f);
+    const wait = (at: number | undefined) => (at == null ? null : at - t);
+    const board = renderBoard(g, {
+      owner: s.owner,
+      dead: ui.dead,
+      ...(sh ? { ownerDelay: (p: number) => wait(sh.plan.squareAt.get(p)), stoneDelay: (p: number) => wait(sh.plan.stoneAt.get(p)) } : {}),
+    });
+    // 세는 동안은 둘 다 생각하는 얼굴, 발표하면 이긴 쪽은 신난 얼굴·진 쪽은 아쉬운 얼굴
+    const who = (color: 'black' | 'white', name: string, won: boolean, lost: boolean) =>
+      `<span class="sc-who"><span class="f-count">${stoneFace(color, 34, 'think')}</span><span class="f-end">${stoneFace(color, 34, won ? 'yay' : lost ? 'oops' : 'happy')}</span>${name}</span>`;
     body = `<h2>집을 세어 봐요</h2>
-    <div class="rules-board score-board">${renderBoard(g, { owner: s.owner, dead: ui.dead })}</div>
+    <div class="rules-board score-board">${board}</div>
     <p class="sheet-p small center">${
       ui.dead.length
         ? `흐린 돌은 <b>죽은 돌(사석)</b>이라 빼고 세요 · 까망이 ${dc.black}개, 하양이 ${dc.white}개`
         : '죽은 돌(사석)이 없어요'
     }<br>틀렸으면 바둑판의 돌을 눌러 바꿔요.</p>
-    <table class="score-table">
-      <thead><tr><th></th><th>돌</th><th>집</th><th>덤</th><th>합계</th></tr></thead>
+    <table class="score-table live" data-phase="${f ? f.phase : 4}">
+      <thead><tr><th></th><th class="c1">돌</th><th class="c2">집</th><th class="c3">덤</th><th class="c4">합계</th></tr></thead>
       <tbody>
-        <tr><th>까망이</th><td>${s.blackStones}</td><td>${s.blackArea}</td><td>-</td><td><b>${s.blackTotal}</b></td></tr>
-        <tr><th>하양이</th><td>${s.whiteStones}</td><td>${s.whiteArea}</td><td>${s.komi}</td><td><b>${s.whiteTotal}</b></td></tr>
+        <tr class="${s.margin > 0 ? 'win' : ''}"><th>${who('black', '까망이', s.margin > 0, s.margin < 0)}</th><td data-sc="bs">${c.bs}</td><td data-sc="ba">${c.ba}</td><td>-</td><td><b data-sc="bt">${c.bt}</b></td></tr>
+        <tr class="${s.margin < 0 ? 'win' : ''}"><th>${who('white', '하양이', s.margin < 0, s.margin > 0)}</th><td data-sc="ws">${c.ws}</td><td data-sc="wa">${c.wa}</td><td data-sc="k">${c.k}</td><td><b data-sc="wt">${c.wt}</b></td></tr>
       </tbody>
     </table>
-    <p class="sheet-p center"><b>${verdict}</b></p>
+    <p class="sheet-p center score-verdict ${!f || f.revealed ? 'on' : ''}"><b>${verdict}</b></p>
     <p class="sheet-p small center">아직 싸우는 중인 돌이 있으면 '더 둘래요'를 눌러 마저 둬요.</p>
     <div class="row2"><button class="btn ghost" data-action="resume-play">더 둘래요</button><button class="btn primary" data-action="finish-score">끝낼래요</button></div>`;
   } else if (ui.sheet === 'rules') {
@@ -1324,6 +1519,12 @@ function esc(s: string): string {
 
 app.addEventListener('click', (ev) => {
   const target = ev.target as Element;
+  // 집 세기 연출 중에는 어디를 눌러도 바로 발표로(더 둘래요·끝낼래요 버튼은 그대로 동작)
+  // (발표한 뒤에는 평소처럼 — 돌을 눌러 죽은 돌 고치기)
+  if (ui.sheet === 'score' && ui.scoreShow && Date.now() - ui.scoreShow.startedAt < ui.scoreShow.plan.revealAt) {
+    const act = (target.closest('[data-action]') as HTMLElement | null)?.dataset.action;
+    if (act !== 'resume-play' && act !== 'finish-score') return skipScoreShow();
+  }
   const ssvg = target.closest('.score-board .board-svg') as SVGSVGElement | null;
   if (ssvg && ui.sheet === 'score' && ui.game) {
     toggleDead(pointFromEvent(ssvg, ui.game.size, (ev as MouseEvent).clientX, (ev as MouseEvent).clientY));
@@ -1757,6 +1958,12 @@ app.addEventListener(
 requestPersistence();
 // 아이패드는 첫 터치 뒤에만 소리가 난다
 document.addEventListener('pointerdown', () => unlockAudio(), { once: true });
+// 아이패드를 돌리면 강의 바둑판 크기를 다시 맞춘다(화면 전체를 다시 그리지 않음)
+let fitTimer: number | undefined;
+window.addEventListener('resize', () => {
+  window.clearTimeout(fitTimer);
+  fitTimer = window.setTimeout(() => ui.screen === 'lesson' && fitLesson(), 150);
+});
 render();
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

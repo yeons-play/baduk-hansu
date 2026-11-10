@@ -1,5 +1,5 @@
 // 까망이(흑)·하양이(백) 캐릭터 — 바둑판 위 돌은 깔끔하게 두고, 이름표·결과 화면에만 얼굴을 그린다.
-export type Mood = 'happy' | 'think' | 'wow' | 'oops';
+export type Mood = 'happy' | 'think' | 'wow' | 'oops' | 'yay';
 
 let uid = 0;
 
@@ -19,6 +19,10 @@ export function stoneFace(color: 'black' | 'white', size: number, mood: Mood = '
   } else if (mood === 'wow') {
     eyes = `<circle cx="41" cy="46" r="5" fill="${eye}"/><circle cx="59" cy="46" r="5" fill="${eye}"/>`;
     mouth = `<ellipse cx="50" cy="64" rx="6" ry="7" fill="${eye}"/>`;
+  } else if (mood === 'yay') {
+    // 신난 얼굴: 웃는 눈(^ ^) + 크게 벌린 입
+    eyes = `<path d="M35 48q6-8 12 0M53 48q6-8 12 0" stroke="${eye}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+    mouth = `<path d="M38 58q12 16 24 0z" fill="${eye}"/>`;
   } else if (mood === 'oops') {
     eyes = `<circle cx="41" cy="47" r="4" fill="${eye}"/><circle cx="59" cy="47" r="4" fill="${eye}"/>`;
     mouth = `<path d="M42 66q8-6 16 0" stroke="${eye}" stroke-width="3.5" fill="none" stroke-linecap="round"/>`;

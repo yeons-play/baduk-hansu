@@ -88,6 +88,41 @@ export const hasSeenRules = (mode: GameMode = 'capture') =>
 export const markRulesSeen = (mode: GameMode = 'capture') =>
   write(mode === 'normal' ? KEY_SEEN_NORMAL_RULES : KEY_SEEN_RULES, true);
 
+// ───────── 시작 시트에서 고른 것 ─────────
+// 앱을 완전히 닫았다 열어도 지난번에 고른 판 크기·하양이 실력이 그대로 나오게 한다
+// (전에는 늘 9줄·쉬워요로 돌아가서 13줄을 매번 다시 골라야 했음)
+const KEY_START = 'baduk-start';
+
+export interface StartPrefs {
+  /** 하양이 실력 */
+  level: Level;
+  /** 따내기 바둑 판 크기 */
+  size: 5 | 7 | 9;
+  /** 진짜 바둑 판 크기 */
+  normalSize: 9 | 13;
+  /** 따내기 바둑에서 먼저 잡을 돌 수 */
+  target: 1 | 2 | 3;
+}
+
+export const START_DEFAULTS: StartPrefs = { level: 1, size: 7, normalSize: 9, target: 1 };
+
+/** 저장된 값 가운데 고를 수 있는 것만 쓰고, 없거나 이상하면 처음 값 */
+export function loadStartPrefs(): StartPrefs {
+  const p = read<Partial<Record<keyof StartPrefs, unknown>>>(KEY_START);
+  const pick = <T>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
+  const d = START_DEFAULTS;
+  if (!p || typeof p !== 'object') return { ...d };
+  return {
+    level: pick(p.level, [1, 2, 3] as const, d.level),
+    size: pick(p.size, [5, 7, 9] as const, d.size),
+    normalSize: pick(p.normalSize, [9, 13] as const, d.normalSize),
+    target: pick(p.target, [1, 2, 3] as const, d.target),
+  };
+}
+export function saveStartPrefs(p: StartPrefs): void {
+  write(KEY_START, { v: 1, ...p });
+}
+
 /** 브라우저가 저장 공간을 임의로 비우지 않도록 요청 */
 export function requestPersistence(): void {
   try {

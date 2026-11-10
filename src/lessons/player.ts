@@ -263,7 +263,7 @@ export class LessonPlayer {
     const fb = this.feedback
       ? `<div class="feedback ${this.feedback.ok ? 'ok' : 'no'}" role="status">${this.feedback.ok ? icon('check') : icon('help')}<span>${rich(this.feedback.text)}</span></div>`
       : '';
-    return `<main class="screen game lesson-screen">
+    return `<main class="screen game lesson-screen${s.kind === 'choice' ? ' has-choice' : ''}${this.feedback ? ' has-fb' : ''}">
   <header class="bar">
     <button class="back" data-action="lesson-exit">${icon('chev')}뒤로</button>
     <h1>${l.practice ? "연습" : `${l.id}강`} · ${esc(l.title)}<small>(${esc(l.term)})</small></h1>

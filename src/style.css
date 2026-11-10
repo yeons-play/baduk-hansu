@@ -453,3 +453,51 @@ button.lesson:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--lin
 .gem-get > .chest { flex: none; animation: pop 0.35s ease-out both; }
 .gem-tag .chest { display: block; }
 @media (prefers-reduced-motion: reduce) { .chest-btn .chest, .gem-get > .chest { animation: none; } }
+
+/* ───────── 집 세기 연출 (src/scoreshow.ts) ───────── */
+/* 집 네모: 차례가 오면 '뿅' 나타난다. animation-delay는 남은 시간(지났으면 음수라 이어서 보임) */
+.board-svg .terr-pop { transform-box: fill-box; transform-origin: center; animation: terr-pop 0.32s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes terr-pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 0.85; } }
+/* 돌 세기: 세는 차례에 살짝 커졌다 돌아온다 */
+.board-svg .count-pulse { transform-box: fill-box; transform-origin: center; animation: count-pulse 0.3s ease-out both; }
+@keyframes count-pulse { 50% { transform: scale(1.14); } }
+/* 지금 세는 칸을 표에서 밝게 */
+.score-table.live td, .score-table.live thead th { transition: background 0.2s; }
+.score-table[data-phase="1"] .c1, .score-table[data-phase="1"] tbody td:nth-child(2),
+.score-table[data-phase="2"] .c2, .score-table[data-phase="2"] tbody td:nth-child(3),
+.score-table[data-phase="3"] .c3, .score-table[data-phase="3"] tbody td:nth-child(4) { background: #FFF1C9; }
+.score-table td { font-variant-numeric: tabular-nums; }
+.sc-who { display: inline-flex; align-items: center; gap: 6px; }
+.sc-who .face { flex: none; }
+/* 세는 동안은 생각하는 얼굴, 발표 뒤에는 이긴·진 얼굴 */
+.score-table .f-end { display: none; }
+.score-table[data-phase="4"] .f-count { display: none; }
+.score-table[data-phase="4"] .f-end { display: inline-flex; }
+.score-table[data-phase="4"] tr.win { background: #FFF6DA; }
+.score-table[data-phase="4"] tr.win b { font-size: 1.6rem; }
+.score-verdict { visibility: hidden; min-height: 1.6em; }
+.score-verdict.on { visibility: visible; }
+.sheet.fresh .score-verdict.on b, .sheet.fresh tr.win .f-end { display: inline-block; animation: pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sheet.fresh tr.win b { display: inline-block; animation: pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
+
+/* ───────── 잡았을 때 얼굴 반응 ───────── */
+/* --react는 지난 시간(음수 지연)이라 다시 그려도 움직임이 이어진다 */
+.player.yay .face { animation: cheer-hop 0.6s ease-out var(--react, 0ms) both; }
+.player.oops .face { animation: shake 0.45s ease-in-out var(--react, 0ms) both; }
+.player.yay { border-color: var(--mint-ink); }
+@keyframes cheer-hop { 30% { transform: translateY(-10px) scale(1.08); } 60% { transform: translateY(0) scale(1); } 80% { transform: translateY(-4px); } }
+
+/* 진짜 바둑: 잡은 돌은 작게(집으로 이기는 놀이라 점수처럼 보이지 않게) */
+.pcount.small { font-family: var(--body, inherit); font-size: 0.95rem; color: var(--sub); white-space: nowrap; }
+.pcount.small b { font-family: var(--title); font-weight: 400; font-size: 1.25rem; color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .board-svg .terr-pop, .board-svg .count-pulse, .player.yay .face, .player.oops .face,
+  .sheet.fresh .score-verdict.on b, .sheet.fresh tr.win .f-end, .sheet.fresh tr.win b { animation: none; }
+}
+/* 아이폰처럼 좁은 화면: 이름표가 두 줄이 되지 않게 '잡은 돌' 글씨는 빼고 아래 안내에 한 번만 */
+.goal-cap { display: none; }
+@media (max-width: 600px) {
+  .pcount.small .pcount-lbl { display: none; }
+  .goal-cap { display: inline; }
+}
